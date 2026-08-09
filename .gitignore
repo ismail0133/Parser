@@ -1,0 +1,22 @@
+# Confidential/local data
+data/
+output/
+*.csv
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/
+
+# Front-end dependencies not used by the parser deliverable
+node_modules/
+package-lock.json
+package.json

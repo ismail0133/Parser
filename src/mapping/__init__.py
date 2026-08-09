@@ -1,0 +1,1 @@
+"""RAW-to-object mapping."""
