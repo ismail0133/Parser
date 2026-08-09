@@ -50,7 +50,7 @@ Les artefacts techniques `obj_findings.jsonl`, `parser_anomalies.json` et `parse
 
 - formule de `unique_id` (aucune propriété générée) ;
 - formule de fallback de `remediation_id` ;
-- éventuelle correspondance `Colonne1` → `PROPOSED OWNER` / `ownership` ;
+- propriété cible et règle métier de la colonne source `Proposed Owner` ;
 - règles de `remediation_strategy.strategy_type` ;
 - formule d'agrégation du KRI RAS 9 (la condition booléenne par finding est calculée avec scan authentifié par défaut) ;
 - regex hostname exacte, politique CVE finale et formats exhaustifs de dates ;

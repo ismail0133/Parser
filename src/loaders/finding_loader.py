@@ -4,14 +4,14 @@ import pandas as pd
 
 
 EXPECTED_COLUMNS = [
-    "REPORTDATE - Month", "REM_KEY_ID", "STATUS_REM", "HOSTNAME",
+    "Month", "REM_KEY_ID", "STATUS_REM", "HOSTNAME",
     "OPERATING_SYSTEM", "AFFECTED_PLATFORMS", "AUID", "ENVIRONMENT",
     "CODE_APP", "CVE", "title", "PRIORITY", "AFFECTED_PRODUCTS_REVIEWED",
     "PRODUCT", "XTRACT_PATH", "ABSOLUTE_FIRST_FOUND_DATE", "FIRST_FOUND_DATE",
     "LAST_FOUND_DATE", "AGE", "SLA", "SOLUTION_LINKS", "Legacy APP ID",
     "Application Name", "AppSec Profile", "Business Lines", "IT Sub Cluster",
     "Production Domain Manager", "Production Manager", "PROPOSED_ACTION",
-    "Colonne1", "SEVERITY_LEVEL", "KRI RAS 9", "Action Plan", "ETA",
+    "Proposed Owner", "SEVERITY_LEVEL", "KRI RAS 9", "Action Plan", "ETA",
 ]
 
 

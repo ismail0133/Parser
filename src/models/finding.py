@@ -54,7 +54,7 @@ class Finding(BaseModel):
     business_line: str | None = None
     severity_level: str | None = None
     proposed_action: str | None = None
-    ownership: str | None = None  # Remains None until Colonne1 mapping is confirmed.
+    ownership: str | None = None  # Proposed Owner target/rule remains TO_VALIDATE.
     remediation_strategy: RemediationStrategy
     false_positive: bool = False
     false_positive_to_confirm: bool = False

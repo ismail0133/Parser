@@ -4,7 +4,7 @@ Ce mapping applique strictement les règles communiquées depuis le document « 
 
 | # | source_column | target_obj_finding_property | category | transformation | status | comment |
 |---:|---|---|---|---|---|---|
-| 1 | `REPORTDATE - Month` | `as_of_date` | NORMALIZED | Convertir en date. Compléter les parties absentes avec la date courante : année, mois ou jour selon le format reçu. | CONFIRMED | Ajouter une anomalie `INFO` dès qu'une partie est déduite. Exemples documentaires : `May` → `2026-05-13`, `5-2` → `2026-05-02` pour une date courante au 13/06/2026. |
+| 1 | `Month` | `as_of_date` | NORMALIZED | Convertir en date. Compléter les parties absentes avec la date courante : année, mois ou jour selon le format reçu. | CONFIRMED | Nom source confirmé par le CSV réel. Ajouter une anomalie `INFO` dès qu'une partie est déduite. Exemples documentaires : `May` → `2026-05-13`, `5-2` → `2026-05-02` pour une date courante au 13/06/2026. |
 | 2 | `REM_KEY_ID` | `remediation_id` | COPY / CALCULATED | Copier la valeur nettoyée lorsqu'elle est présente. Si elle est absente, la calculer uniquement avec la formule officielle. | CONFIRMED / TO_VALIDATE | La cible et la copie sont confirmées. La formule de fallback dépend du document « Object - Finding object specification » encore absent. `Init only = Yes`. |
 | 3 | `STATUS_REM` | aucune | NOT USED | Ne pas mapper. | NOT_USED | Explicitement non utilisé. |
 | 4 | `HOSTNAME` | `hostname` | NORMALIZED | Nettoyer et valider selon la regex/documentation hostname. | CONFIRMED | La propriété cible est confirmée. La regex exacte devra être extraite de la documentation avant validation stricte. |
@@ -33,7 +33,7 @@ Ce mapping applique strictement les règles communiquées depuis le document « 
 | 27 | `Production Domain Manager` | aucune | NOT USED | Ne pas mapper. | NOT_USED | Explicitement non utilisé. |
 | 28 | `Production Manager` | aucune | NOT USED | Ne pas mapper. | NOT_USED | Explicitement non utilisé. |
 | 29 | `PROPOSED_ACTION` | `proposed_action` | COPY / NORMALIZED | Copier après nettoyage et appliquer uniquement le référentiel documentaire disponible. | CONFIRMED | Mapping cible confirmé. |
-| 30 | `Colonne1` | `ownership` uniquement si équivalence confirmée | TO_VALIDATE | Ne pas mapper actuellement. | TO_VALIDATE | Le CSV ne contient pas explicitement `PROPOSED OWNER`. Il est interdit de supposer que `Colonne1 = PROPOSED OWNER`. |
+| 30 | `Proposed Owner` | propriété cible à confirmer | TO_VALIDATE | Reconnaître la colonne dans le schéma source, mais ne pas la mapper actuellement. | TO_VALIDATE | Le nom source est confirmé par le CSV réel. La propriété cible et la règle métier ne sont pas confirmées ; aucune valeur n'est inventée. |
 | 31 | `SEVERITY_LEVEL` | `severity_level` | NORMALIZED | Copier/nettoyer puis valider selon le référentiel de sévérité. | CONFIRMED | Sert au calcul du SLA et du KRI. Valeur inconnue → anomalie. |
 | 32 | `KRI RAS 9` | aucune copie directe ; résultat KRI calculé | CALCULATED / CONTROL | Utiliser la colonne uniquement pour confirmer le résultat calculé. | CALCULATED | Calcul documentaire : serveur sensible, scan authentifié, vulnérabilité Critical/Very High hors SLA, faux positifs exclus. Les sources exactes du scan authentifié et certains détails du calcul doivent rester `TO_VALIDATE` tant qu'ils ne sont pas disponibles. |
 | 33 | `Action Plan` | `remediation_strategy.description`, `remediation_strategy.strategy_type`, `false_positive`, `false_positive_to_confirm` | COPY / CALCULATED | Description = valeur non vide. Calculer les indicateurs false positive sans distinction de casse. Déduire le type de stratégie uniquement selon la règle officielle. | CONFIRMED / CALCULATED / TO_VALIDATE | `false_positive = true` si égal à `False positive`. `false_positive_to_confirm = true` si contient `False positive to be confirmed`, sauf valeur explicitement fausse. La règle de `strategy_type` reste à fournir. |
@@ -98,7 +98,7 @@ Le résultat reste `None` si `age` ou `sla` est `None`.
 FIELDS_TO_VALIDATE = [
     "unique_id_formula",
     "remediation_id_fallback_formula",
-    "colonne1_is_proposed_owner",
+    "proposed_owner_target_property_and_business_rule",
     "remediation_strategy.strategy_type_rules",
     "hostname_exact_regex",
     "cve_exact_validation_policy",
@@ -113,4 +113,4 @@ FIELDS_TO_VALIDATE = [
 ]
 ```
 
-`unique_id` ne doit recevoir aucun UUID aléatoire. `remediation_id` ne doit pas être calculé en l'absence de sa formule officielle. `Colonne1` reste ignorée tant que son équivalence avec `PROPOSED OWNER` n'est pas confirmée.
+`unique_id` ne doit recevoir aucun UUID aléatoire. `remediation_id` ne doit pas être calculé en l'absence de sa formule officielle. `Proposed Owner` reste ignorée tant que sa propriété cible et sa règle métier ne sont pas confirmées.

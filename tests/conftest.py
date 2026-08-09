@@ -9,7 +9,7 @@ from src.loaders.finding_loader import EXPECTED_COLUMNS
 def synthetic_row(**overrides):
     row = {column: "" for column in EXPECTED_COLUMNS}
     row.update({
-        "REPORTDATE - Month": "May 2026",
+        "Month": "May 2026",
         "REM_KEY_ID": "1004-s00v19981544",
         "HOSTNAME": "s00v19981544",
         "OPERATING_SYSTEM": "RHEL_9.6",

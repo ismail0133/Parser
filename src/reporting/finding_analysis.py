@@ -10,7 +10,7 @@ from src.models.finding import Anomaly, Finding
 OPEN_POINTS = [
     {"field": "unique_id", "status": "TO_VALIDATE", "reason": "Official generation formula not available"},
     {"field": "remediation_id", "status": "TO_VALIDATE", "reason": "Official fallback formula not available when REM_KEY_ID is missing"},
-    {"field": "Colonne1", "status": "TO_VALIDATE", "reason": "No proof that Colonne1 is PROPOSED OWNER"},
+    {"field": "Proposed Owner", "status": "TO_VALIDATE", "reason": "Target property and business mapping rule are not confirmed"},
     {"field": "remediation_strategy.strategy_type", "status": "TO_VALIDATE", "reason": "Official derivation rules not available"},
     {"field": "KRI RAS 9 aggregate", "status": "TO_VALIDATE", "reason": "No documented aggregate rate or score formula; only the per-finding condition is computed"},
 ]

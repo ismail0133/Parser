@@ -10,6 +10,10 @@ def test_loader_reads_34_columns_and_limit(csv_factory):
     frame = load_findings(path, limit=1)
     assert frame.shape == (1, 34)
     assert frame.columns.tolist() == EXPECTED_COLUMNS
+    assert EXPECTED_COLUMNS[0] == "Month"
+    assert EXPECTED_COLUMNS[29] == "Proposed Owner"
+    assert "REPORTDATE - Month" not in EXPECTED_COLUMNS
+    assert "Colonne1" not in EXPECTED_COLUMNS
 
 
 def test_schema_rejects_missing_column(csv_factory):

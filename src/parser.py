@@ -132,12 +132,12 @@ def _parse_row(row_index: int, row: dict[str, Any], application_lookup: Applicat
     anomalies: list[Anomaly] = []
     direct = map_direct_fields(row)
     rem_id = direct["remediation_id"]
-    as_of_date, inferred_as_of = normalize_as_of_date(row.get("REPORTDATE - Month"), current_date)
+    as_of_date, inferred_as_of = normalize_as_of_date(row.get("Month"), current_date)
     if inferred_as_of:
-        anomalies.append(_anomaly(row_index, rem_id, "REPORTDATE - Month", row.get("REPORTDATE - Month"),
+        anomalies.append(_anomaly(row_index, rem_id, "Month", row.get("Month"),
                                   "INFO", "AS_OF_DATE_INFERRED", "Missing date parts were completed from current_date"))
     elif as_of_date is None:
-        anomalies.append(_anomaly(row_index, rem_id, "REPORTDATE - Month", row.get("REPORTDATE - Month"),
+        anomalies.append(_anomaly(row_index, rem_id, "Month", row.get("Month"),
                                   "ERROR", "INVALID_DATE", "as_of_date cannot be determined"))
 
     environment_detail, environment = normalize_environment(row.get("ENVIRONMENT"))

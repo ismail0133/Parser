@@ -77,6 +77,6 @@ def test_kri_source_mismatch_and_open_points(csv_factory):
     assert report["kri_ras9"]["status"] == "COMPUTED"
     assert report["kri_ras9"]["qualifying_findings"] == 1
     fields = {item["field"] for item in report["open_points"]}
-    assert {"unique_id", "remediation_id", "Colonne1", "remediation_strategy.strategy_type"} <= fields
+    assert {"unique_id", "remediation_id", "Proposed Owner", "remediation_strategy.strategy_type"} <= fields
     markdown = render_analysis_markdown(report)
     assert "OPEN POINTS / TO_VALIDATE" in markdown
