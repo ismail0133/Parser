@@ -170,10 +170,6 @@ def _parse_row(row_index: int, row: dict[str, Any], application_lookup: Applicat
                                   "last_detection month is inconsistent with as_of_date"))
 
     target = direct["target"]
-    ownership_main = "APS" if target and target.casefold().startswith("/appli/") else None
-    if target and ownership_main is None:
-        anomalies.append(_anomaly(row_index, rem_id, "XTRACT_PATH", target, "ERROR",
-                                  "INVALID_TARGET", "target does not start with /appli/"))
     priority = direct["priority"]
     if normalize_string(row.get("PRIORITY")) and priority is None:
         anomalies.append(_anomaly(row_index, rem_id, "PRIORITY", row.get("PRIORITY"),
@@ -201,7 +197,7 @@ def _parse_row(row_index: int, row: dict[str, Any], application_lookup: Applicat
         "proposed_action": direct["proposed_action"],
         "ownership": None,
         "remediation_strategy": {"description": direct["action_plan"], "strategy_type": None,
-                                 "ownership_main": ownership_main},
+                                 "ownership_main": None},
         "false_positive": direct["false_positive"],
         "false_positive_to_confirm": direct["false_positive_to_confirm"],
     }
@@ -225,8 +221,9 @@ def _parse_row(row_index: int, row: dict[str, Any], application_lookup: Applicat
     payload["server"]["sensitive"] = calculate_server_sensitivity(
         application.get("appsec"), application.get("vital"), application.get("cis"), environment_detail
     )
-    payload["eta"] = None if direct["false_positive"] else _parse_eta(row.get("ETA"))
-    if not direct["false_positive"] and normalize_string(row.get("ETA")) and payload["eta"] is None:
+    eta_source = normalize_string(row.get("ETA"))
+    payload["eta"] = None if direct["false_positive"] or eta_source is None else _parse_eta(eta_source)
+    if not direct["false_positive"] and eta_source is not None and payload["eta"] is None:
         anomalies.append(_anomaly(row_index, rem_id, "ETA", row.get("ETA"), "ERROR",
                                   "INVALID_DATE", "eta cannot be parsed"))
     if rem_id is None:

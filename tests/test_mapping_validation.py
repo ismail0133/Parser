@@ -7,7 +7,7 @@ def test_priority_mapping():
     assert normalize_priority("PR5") is None
 
 
-def test_false_positive_and_aps_ingredients():
+def test_false_positive_and_target_mapping():
     mapped = map_direct_fields({"Action Plan": "False positive", "XTRACT_PATH": "/appli/x"})
     assert mapped["false_positive"] is True
     assert mapped["target"] == "/appli/x"

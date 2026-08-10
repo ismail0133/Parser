@@ -13,7 +13,7 @@ def test_obj_finding_creation_and_anomalies(csv_factory):
     assert finding.application.auid == "AP10426"
     assert finding.server.os_name == "RHEL"
     assert finding.priority == 1
-    assert finding.remediation_strategy.ownership_main == "APS"
+    assert finding.remediation_strategy.ownership_main is None
     assert stats["output_findings"] == 1
     assert any(item.error_type == "SLA_DEDUCED" for item in anomalies)
 

@@ -7,7 +7,7 @@ NULL_STRINGS = {"", "null", "n/a"}
 
 
 def normalize_string(value: Any) -> str | None:
-    if value is None or value is pd.NA:
+    if value is None or value is pd.NA or bool(pd.isna(value)):
         return None
     text = str(value).strip()
     return None if text.casefold() in NULL_STRINGS else text

@@ -10,8 +10,8 @@ EXPECTED_COLUMNS = [
     "PRODUCT", "XTRACT_PATH", "ABSOLUTE_FIRST_FOUND_DATE", "FIRST_FOUND_DATE",
     "LAST_FOUND_DATE", "AGE", "SLA", "SOLUTION_LINKS", "Legacy APP ID",
     "Application Name", "AppSec Profile", "Business Lines", "IT Sub Cluster",
-    "Production Domain Manager", "Production Manager", "PROPOSED_ACTION",
-    "Proposed Owner", "SEVERITY_LEVEL", "KRI RAS 9", "Action Plan", "ETA",
+    "Production Domain Manager", "Production Manager", "SEVERITY_LEVEL",
+    "PROPOSED_ACTION", "Proposed Owner", "KRI RAS 9", "Action Plan", "ETA",
 ]
 
 
