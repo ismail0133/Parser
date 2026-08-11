@@ -60,6 +60,12 @@ Compter les avertissements par type :
 python -c "import json,collections; d=json.load(open('output/parser_anomalies.json',encoding='utf-8')); print('=== WARNINGS ==='); print(*collections.Counter(x['error_type'] for x in d if x['severity']=='WARNING').most_common(),sep='\n')"
 ```
 
+Afficher les 10 premières erreurs de cohérence du mois de dernière détection :
+
+```powershell
+python -c "import json; d=json.load(open('output/parser_anomalies.json', encoding='utf-8')); x=[a for a in d if a['error_type']=='LAST_DETECTION_MONTH_MISMATCH']; print(*x[:10], sep='\n')"
+```
+
 ## TO_VALIDATE restant
 
 - formule de `unique_id` (aucune propriété générée) ;
