@@ -65,6 +65,11 @@ Afficher les 10 premières erreurs de cohérence du mois de dernière détection
 ```powershell
 python -c "import json; d=json.load(open('output/parser_anomalies.json', encoding='utf-8')); x=[a for a in d if a['error_type']=='LAST_DETECTION_MONTH_MISMATCH']; print(*x[:10], sep='\n')"
 ```
+Afficher les lignes 97 à 103 du CSV avec les colonnes de contrôle :
+
+```powershell
+python -c "import pandas as pd; df=pd.read_csv('data/finding_list_fixed.csv', encoding='utf-8-sig'); print(df.iloc[96:103][['Month','REM_KEY_ID','LAST_FOUND_DATE']].to_string(index=True))"
+```
 
 ## TO_VALIDATE restant
 
