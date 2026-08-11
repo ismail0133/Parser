@@ -198,19 +198,32 @@ Le script exige le même nombre de lignes RAW et d'objets JSONL afin de garantir
 
 Le parser ne copie jamais directement la colonne source `KRI RAS 9` comme résultat calculé.
 
-La condition booléenne au niveau d'un finding est implémentée à partir des éléments confirmés :
-
+La condition au niveau d'un finding est calculée à partir de :
 - serveur sensible ;
 - scan authentifié par défaut, sauf indication explicite contraire ;
-- sévérité `Critical` ou `Very High` ;
+- sévérité Critical ou Very High ;
 - finding hors SLA ;
 - faux positif exclu.
 
-Le résultat peut être `COMPUTED` ou `NOT_COMPUTABLE` lorsque des données nécessaires manquent.
+Le KRI global est défini comme :
 
-Lorsque la valeur source est exploitable, elle est comparée au résultat calculé. Une différence produit un warning `KRI_MISMATCH`. Le parser conserve cette différence sans remplacer automatiquement la source ou le calcul.
+100 ×
+(nombre de serveurs sensibles distincts, scannés en authentifié,
+ayant au moins une vulnérabilité Critical/Very High hors SLA)
+/
+(nombre total de serveurs sensibles distincts scannés en authentifié)
 
-La formule d'agrégation globale du KRI RAS 9 n'est pas confirmée et reste dans `TO_VALIDATE`.
+Les faux positifs sont exclus.
+
+L'interprétation documentée est :
+- Perfect : 0 %
+- Excellent : > 0 % et <= 10 %
+- Satisfactory : > 10 % et <= 30 %
+- Unsatisfactory : > 30 % et <= 50 %
+- Critical : > 50 % et <= 100 %
+
+Si l'agrégation globale n'est pas encore implémentée dans le code,
+elle reste une fonctionnalité à implémenter, et non une règle métier TO_VALIDATE.
 
 ## TO_VALIDATE restant
 
@@ -218,7 +231,7 @@ La formule d'agrégation globale du KRI RAS 9 n'est pas confirmée et reste dans
 - formule de fallback de `remediation_id` lorsque `REM_KEY_ID` est absent ;
 - propriété cible et règle métier de la colonne source `Proposed Owner` ;
 - règles de déduction de `remediation_strategy.strategy_type` ;
-- formule d'agrégation globale du KRI RAS 9 ;
+- implémentation technique de l'agrégation globale du KRI RAS 9, si elle n'est pas encore codée ;
 - regex hostname exacte ;
 - politique CVE finale ;
 - formats exhaustifs des dates ;
