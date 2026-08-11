@@ -46,6 +46,20 @@ Un timestamp unique `YYYYMMDD-HHMMSS` est partagé par les trois artefacts offic
 
 Les artefacts techniques `obj_findings.jsonl`, `parser_anomalies.json` et `parser_report.json` sont conservés.
 
+## Examiner les anomalies
+
+Compter les erreurs par type :
+
+```powershell
+python -c "import json,collections; d=json.load(open('output/parser_anomalies.json',encoding='utf-8')); print('=== ERRORS ==='); print(*collections.Counter(x['error_type'] for x in d if x['severity']=='ERROR').most_common(),sep='\n')"
+```
+
+Compter les avertissements par type :
+
+```powershell
+python -c "import json,collections; d=json.load(open('output/parser_anomalies.json',encoding='utf-8')); print('=== WARNINGS ==='); print(*collections.Counter(x['error_type'] for x in d if x['severity']=='WARNING').most_common(),sep='\n')"
+```
+
 ## TO_VALIDATE restant
 
 - formule de `unique_id` (aucune propriété générée) ;
