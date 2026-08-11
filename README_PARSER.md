@@ -70,6 +70,15 @@ Afficher les lignes 97 à 103 du CSV avec les colonnes de contrôle :
 ```powershell
 python -c "import pandas as pd; df=pd.read_csv('data/finding_list_fixed.csv', encoding='utf-8-sig'); print(df.iloc[96:103][['Month','REM_KEY_ID','LAST_FOUND_DATE']].to_string(index=True))"
 ```
+Valider un échantillon représentatif de 20 findings :
+
+```powershell
+python validate_sample_findings.py `
+  --raw "data/finding_list_fixed.csv" `
+  --findings "output/obj_findings.jsonl" `
+  --output-dir "output" `
+  --sample-size 20
+```
 
 ## TO_VALIDATE restant
 
