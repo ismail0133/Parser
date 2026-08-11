@@ -164,11 +164,6 @@ def _parse_row(row_index: int, row: dict[str, Any], application_lookup: Applicat
     if normalize_string(row.get("LAST_FOUND_DATE")) and last_detection is None:
         anomalies.append(_anomaly(row_index, rem_id, "LAST_FOUND_DATE", row.get("LAST_FOUND_DATE"),
                                   "ERROR", "INVALID_DATE", "last_detection cannot be parsed"))
-    if last_detection and as_of_date and (last_detection.year, last_detection.month) != (as_of_date.year, as_of_date.month):
-        anomalies.append(_anomaly(row_index, rem_id, "LAST_FOUND_DATE", row.get("LAST_FOUND_DATE"),
-                                  "ERROR", "LAST_DETECTION_MONTH_MISMATCH",
-                                  "last_detection month is inconsistent with as_of_date"))
-
     target = direct["target"]
     priority = direct["priority"]
     if normalize_string(row.get("PRIORITY")) and priority is None:
