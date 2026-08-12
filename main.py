@@ -89,6 +89,11 @@ def main() -> int:
     args = cli.parse_args()
     findings, anomalies, stats = parse_findings(args.input, limit=args.limit)
     artifacts = write_outputs(findings, anomalies, stats, args.output_dir, input_path=args.input)
+    status = (
+        "FAILED" if stats["error_count"] > 0
+        else "SUCCESS_WITH_WARNINGS" if stats["warning_count"] > 0
+        else "SUCCESS"
+    )
     print(f"Input rows       : {stats['input_rows']}")
     print(f"Parsed success   : {stats['parsed_successfully']}")
     print(f"Warnings         : {stats['warning_count']}")

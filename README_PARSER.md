@@ -87,6 +87,99 @@ Les tests utilisent uniquement des données synthétiques et ne dépendent pas d
 python -m pytest -q
 ```
 
+## Commandes de vérification sous Windows
+
+### 4. Vérifier les 8 tâches KRI
+
+Exécuter uniquement les tests du calcul global :
+
+```powershell
+python -m pytest tests/test_global_kri.py -v
+```
+
+Ces tests vérifient :
+
+1. serveur sensible, scan authentifié et vulnérabilité Critical hors SLA ;
+2. `authenticated_scan=False` ;
+3. `authenticated_scan=None` ;
+4. finding non overdue ;
+5. finding faux positif ;
+6. hostname distinct malgré plusieurs findings ;
+7. aucun serveur éligible : `NOT_COMPUTABLE` avec `percentage=None` ;
+8. catégories KRI pour les valeurs 0, 5, 20, 40 et 60.
+
+### 5. Vérifier l'agrégation et les mismatches
+
+```powershell
+python -m pytest tests/test_kri_mismatch_analysis.py -v
+```
+
+### 6. Exécuter toute la suite de tests
+
+```powershell
+python -m pytest -q
+```
+
+Résultat attendu avec le commit `ff4440b` :
+
+```text
+55 passed
+```
+
+### 7. Vérifier les fichiers ajoutés et modifiés
+
+Afficher le résumé du commit :
+
+```powershell
+git show --stat --oneline ff4440b
+```
+
+Afficher exactement les lignes modifiées :
+
+```powershell
+git show ff4440b
+```
+
+Afficher seulement les noms et statuts des fichiers :
+
+```powershell
+git show --name-status --format="" ff4440b
+```
+
+### 8. Exécuter le Parser
+
+Placer le CSV à cet emplacement :
+
+```text
+Parser\data\finding_list_fixed.csv
+```
+
+Exécuter le Parser sur 10 lignes :
+
+```powershell
+python main.py --input "data/finding_list_fixed.csv" --limit 10
+```
+
+Traiter ensuite tout le fichier :
+
+```powershell
+python main.py --input "data/finding_list_fixed.csv"
+```
+
+Afficher les artefacts générés :
+
+```powershell
+Get-ChildItem .\output
+```
+
+Afficher le dernier résultat du Parser :
+
+```powershell
+Get-Content (Get-ChildItem .\output\PARSER-Result-*.json |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1).FullName
+```
+
 ## État actuel de validation
 
 ### Validation complète
