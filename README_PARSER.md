@@ -126,6 +126,21 @@ Résultat attendu avec le commit `ff4440b` :
 55 passed
 ```
 
+Si `test_loader_reads_34_columns_and_limit` échoue avec :
+
+```text
+AssertionError: assert 'PROPOSED_ACTION' == 'Proposed Owner'
+```
+
+vérifier dans `tests/test_loader_cleaning.py` que les index Python, qui commencent à zéro, sont bien les suivants :
+
+```python
+assert EXPECTED_COLUMNS[29] == "PROPOSED_ACTION"
+assert EXPECTED_COLUMNS[30] == "Proposed Owner"
+```
+
+Ne pas modifier `EXPECTED_COLUMNS` dans `src/loaders/finding_loader.py` pour corriger cet échec : `PROPOSED_ACTION` est la 30e colonne du CSV et `Proposed Owner` la 31e.
+
 ### 7. Vérifier les fichiers ajoutés et modifiés
 
 Afficher le résumé du commit :
@@ -387,3 +402,10 @@ Ces éléments ne sont ni inventés ni complétés automatiquement.
 | Next step après validation V1 | PostgreSQL persistence |
 
 Le statut pourra devenir `PARSER V1 = READY` après exécution du run complet sur le poste contenant `data/finding_list_fixed.csv`, génération de `ParserResult` et analyse documentée des warnings restants.
+
+
+python analyze_kri_mismatches.py `
+  --raw "data/finding_list_fixed.csv" `
+  --findings "output/obj_findings.jsonl" `
+  --anomalies "output/parser_anomalies.json" `
+  --output-dir "output"
