@@ -6,5 +6,6 @@ from .finding import (
     RemediationStrategy,
     Server,
 )
+from .parser_result import ParserResult
 
-__all__ = ["Anomaly", "Application", "CveDetail", "Finding", "RemediationStrategy", "Server"]
+__all__ = ["Anomaly", "Application", "CveDetail", "Finding", "ParserResult", "RemediationStrategy", "Server"]

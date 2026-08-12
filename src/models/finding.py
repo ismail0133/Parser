@@ -10,6 +10,7 @@ class Server(BaseModel):
     environment_detail: str | None = None
     environment: str | None = None
     sensitive: bool = False
+    authenticated_scan: bool | None = True
 
 
 class Application(BaseModel):
@@ -69,3 +70,6 @@ class Anomaly(BaseModel):
     severity: Literal["INFO", "WARNING", "ERROR"]
     error_type: str
     message: str
+    classification: Literal[
+        "ERROR_REMEDIABLE", "ERROR_NON_REMEDIABLE", "WARNING", "INFO", "TO_VALIDATE"
+    ] | None = None

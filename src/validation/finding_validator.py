@@ -26,3 +26,15 @@ def validate_finding_payload(payload: dict[str, Any]) -> list[tuple[str, str, st
     if not validate_auid(payload.get("application", {}).get("auid")):
         errors.append(("AUID", "INVALID_OR_MISSING_AUID", "No valid application AUID is available"))
     return errors
+
+
+def classify_anomaly(severity: str, error_type: str) -> str:
+    """Classify an anomaly without inventing a remediation rule."""
+    if severity == "WARNING":
+        return "WARNING"
+    if severity == "INFO":
+        return "INFO"
+    if error_type.startswith("TO_VALIDATE"):
+        return "TO_VALIDATE"
+    # No current ERROR has a confirmed post-parse deterministic correction.
+    return "ERROR_NON_REMEDIABLE"

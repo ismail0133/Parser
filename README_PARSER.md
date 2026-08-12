@@ -205,7 +205,7 @@ La condition au niveau d'un finding est calculée à partir de :
 - finding hors SLA ;
 - faux positif exclu.
 
-Le KRI global est défini comme :
+Le KRI global est calculé au grain `hostname` distinct selon la formule documentée :
 
 100 ×
 (nombre de serveurs sensibles distincts, scannés en authentifié,
@@ -222,8 +222,38 @@ L'interprétation documentée est :
 - Unsatisfactory : > 30 % et <= 50 %
 - Critical : > 50 % et <= 100 %
 
-Si l'agrégation globale n'est pas encore implémentée dans le code,
-elle reste une fonctionnalité à implémenter, et non une règle métier TO_VALIDATE.
+L'agrégation globale est disponible dans `stats.kri_ras9.aggregate`. La comparaison de la colonne source avec la condition individuelle reste traçable par `KRI_MISMATCH` tant que le grain exact de la valeur source n'est pas confirmé.
+
+Analyser les mismatches sur les artefacts d'un run complet :
+
+```powershell
+python analyze_kri_mismatches.py `
+  --raw "data/finding_list_fixed.csv" `
+  --findings "output/obj_findings.jsonl" `
+  --anomalies "output/parser_anomalies.json" `
+  --output-dir "output"
+```
+
+Cette commande génère :
+
+- `PARSER-KRI_Mismatch_Analysis.json` ;
+- `PARSER-KRI_Mismatch_Analysis.md`.
+
+## ParserResult et retry
+
+Chaque run génère `PARSER-Result-<timestamp>.json`. Ce contrat contient le statut global, les compteurs, les artefacts, le retry, l'enrichissement Application et les points ouverts.
+
+`MAX_PARSE_ATTEMPTS` est fixé à 3. Un retry n'est possible que lorsqu'une anomalie est classée `ERROR_REMEDIABLE` et qu'une correction déterministe documentée est réellement appliquée entre deux tentatives. Les `WARNING`, `INFO` et `TO_VALIDATE` ne déclenchent aucun retry.
+
+Les corrections déterministes actuelles sont déjà réalisées pendant le premier passage du pipeline. Aucun `ERROR` post-parse actuel ne possède de correction documentée supplémentaire ; le run normal expose donc `retry_count = 0` au lieu de répéter inutilement le même parsing.
+
+Sans source APM/Application, l'état est :
+
+```text
+application_enrichment_status = SKIPPED_NO_SOURCE
+```
+
+Ce statut n'est pas un échec global.
 
 ## TO_VALIDATE restant
 
@@ -231,7 +261,7 @@ elle reste une fonctionnalité à implémenter, et non une règle métier TO_VAL
 - formule de fallback de `remediation_id` lorsque `REM_KEY_ID` est absent ;
 - propriété cible et règle métier de la colonne source `Proposed Owner` ;
 - règles de déduction de `remediation_strategy.strategy_type` ;
-- implémentation technique de l'agrégation globale du KRI RAS 9, si elle n'est pas encore codée ;
+- grain exact de la valeur source `KRI RAS 9` utilisée pour la comparaison ;
 - regex hostname exacte ;
 - politique CVE finale ;
 - formats exhaustifs des dates ;
@@ -249,3 +279,18 @@ Ces éléments ne sont ni inventés ni complétés automatiquement.
 - Le calcul KRI disponible est une condition booléenne par finding, pas une agrégation globale.
 - L'enrichissement Application est facultatif et dépend d'une source externe explicitement fournie au parser.
 - La validation des formats reste limitée aux règles actuellement documentées et testées.
+
+## Parser V1 Status
+
+| Metric | Value |
+|---|---|
+| Status dans cet environnement | `NOT READY` |
+| Date de vérification | 2026-08-12 |
+| Tests | 43 passed |
+| Application enrichment | `SKIPPED_NO_SOURCE` |
+| KRI | Condition finding et agrégation globale implémentées ; analyse des 50 mismatches à exécuter sur les artefacts réels |
+| Run final 29 999 lignes | Non exécuté ici : CSV confidentiel absent de cet environnement |
+| Known TO_VALIDATE | Voir section précédente |
+| Next step après validation V1 | PostgreSQL persistence |
+
+Le statut pourra devenir `PARSER V1 = READY` après exécution du run complet sur le poste contenant `data/finding_list_fixed.csv`, génération de `ParserResult` et analyse documentée des warnings restants.

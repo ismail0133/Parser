@@ -8,6 +8,7 @@ import pandas as pd
 from src.calculations.finding_calculations import (
     calculate_age,
     calculate_kri_ras9,
+    calculate_global_kri_ras9,
     calculate_overdue,
     calculate_server_sensitivity,
     calculate_sla,
@@ -18,7 +19,8 @@ from src.enrichment.application_enricher import ApplicationLookup, enrich_with_a
 from src.loaders.finding_loader import EXPECTED_COLUMNS, load_findings
 from src.mapping.finding_mapper import map_direct_fields
 from src.models.finding import Anomaly, Finding
-from src.validation.finding_validator import AUID_PATTERN, validate_finding_payload
+from src.validation.finding_validator import AUID_PATTERN, classify_anomaly, validate_finding_payload
+from src.validation.retry import MAX_PARSE_ATTEMPTS
 
 
 ENVIRONMENT_MAPPING = {
@@ -40,7 +42,8 @@ MONTHS = {
 def _anomaly(row_index: int, rem_key_id: str | None, field: str, value: Any,
              severity: str, error_type: str, message: str) -> Anomaly:
     return Anomaly(row_index=row_index, rem_key_id=rem_key_id, field=field,
-                   value=value, severity=severity, error_type=error_type, message=message)
+                   value=value, severity=severity, error_type=error_type, message=message,
+                   classification=classify_anomaly(severity, error_type))
 
 
 def normalize_as_of_date(value: Any, current_date: date) -> tuple[date | None, bool]:
@@ -285,6 +288,15 @@ def parse_findings(path: str | Path, application_lookup: ApplicationLookup | Non
         "warning_count": counts["WARNING"],
         "error_count": counts["ERROR"],
         "duration_seconds": round(time.perf_counter() - started, 6),
+        "retry": {
+            "retry_count": 0,
+            "max_attempts": MAX_PARSE_ATTEMPTS,
+            "attempts": [],
+            "reason": "No current parser ERROR has a confirmed deterministic post-parse correction",
+        },
+        "application_enrichment": {
+            "status": "SKIPPED_NO_SOURCE" if application_lookup is None else "APPLIED",
+        },
         "kri_ras9": {
             "status": (
                 "COMPUTED" if kri_evaluations and all(item["status"] == "COMPUTED" for item in kri_evaluations)
@@ -297,4 +309,5 @@ def parse_findings(path: str | Path, application_lookup: ApplicationLookup | Non
             "missing_fields": sorted({field for item in kri_evaluations for field in item["missing_fields"]}),
         },
     }
+    stats["kri_ras9"]["aggregate"] = calculate_global_kri_ras9(findings)
     return findings, anomalies, stats

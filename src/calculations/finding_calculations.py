@@ -116,3 +116,51 @@ def parse_source_kri(value: Any) -> bool | None:
     if normalized in {"false", "no", "n", "0"}:
         return False
     return None
+
+
+def categorize_kri_ras9(percentage: float) -> str | None:
+    if percentage == 0:
+        return "PERFECT"
+    if 0 < percentage <= 10:
+        return "EXCELLENT"
+    if 10 < percentage <= 30:
+        return "SATISFACTORY"
+    if 30 < percentage <= 50:
+        return "UNSATISFACTORY"
+    if 50 < percentage <= 100:
+        return "CRITICAL"
+    return None
+
+
+def calculate_global_kri_ras9(findings: list[Any]) -> dict[str, Any]:
+    eligible_servers = {
+        finding.hostname
+        for finding in findings
+        if finding.hostname
+        and finding.server.sensitive is True
+        and finding.server.authenticated_scan is True
+    }
+    numerator_servers = {
+        finding.hostname
+        for finding in findings
+        if finding.hostname in eligible_servers
+        and finding.severity_level
+        and finding.severity_level.casefold() in {"critical", "very high"}
+        and finding.overdue is True
+        and finding.false_positive is not True
+    }
+    denominator = len(eligible_servers)
+    if denominator == 0:
+        percentage = None
+        status = "NOT_COMPUTABLE"
+    else:
+        percentage = round(100 * len(numerator_servers) / denominator, 4)
+        status = "COMPUTED"
+    return {
+        "grain": "DISTINCT_HOSTNAME",
+        "eligible_sensitive_authenticated_servers": denominator,
+        "servers_with_overdue_critical_or_very_high": len(numerator_servers),
+        "percentage": percentage,
+        "category": categorize_kri_ras9(percentage) if percentage is not None else None,
+        "status": status,
+    }

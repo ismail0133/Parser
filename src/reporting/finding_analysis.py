@@ -12,7 +12,7 @@ OPEN_POINTS = [
     {"field": "remediation_id", "status": "TO_VALIDATE", "reason": "Official fallback formula not available when REM_KEY_ID is missing"},
     {"field": "Proposed Owner", "status": "TO_VALIDATE", "reason": "Target property and business mapping rule are not confirmed"},
     {"field": "remediation_strategy.strategy_type", "status": "TO_VALIDATE", "reason": "Official derivation rules not available"},
-    {"field": "KRI RAS 9 aggregate", "status": "TO_VALIDATE", "reason": "No documented aggregate rate or score formula; only the per-finding condition is computed"},
+    {"field": "KRI RAS 9 source comparison grain", "status": "TO_VALIDATE", "reason": "The CSV source value grain must be confirmed before replacing per-finding mismatch comparison"},
 ]
 
 
@@ -76,6 +76,8 @@ def build_analysis_report(
             "top_affected_products": _counter((item.affected_product for item in findings), 10),
         },
         "kri_ras9": stats["kri_ras9"],
+        "application_enrichment": stats["application_enrichment"],
+        "retry": stats["retry"],
         "anomalies": {
             "info": stats["info_count"],
             "warning": stats["warning_count"],
@@ -156,6 +158,18 @@ def render_analysis_markdown(report: dict[str, Any]) -> str:
 | Not computable findings | {kri['not_computable_findings']} |
 | Qualifying findings | {kri['qualifying_findings']} |
 | Missing fields | {missing} |
+| Aggregate status | {kri['aggregate']['status']} |
+| Aggregate percentage | {kri['aggregate']['percentage'] if kri['aggregate']['percentage'] is not None else 'N/A'} |
+| Aggregate numerator | {kri['aggregate']['servers_with_overdue_critical_or_very_high']} |
+| Aggregate denominator | {kri['aggregate']['eligible_sensitive_authenticated_servers']} |
+
+## Application enrichment
+
+{_metric_table(report['application_enrichment'])}
+
+## Retry
+
+{_metric_table({'retry_count': report['retry']['retry_count'], 'max_attempts': report['retry']['max_attempts'], 'reason': report['retry']['reason']})}
 
 ## Errors / Warnings / Information
 
