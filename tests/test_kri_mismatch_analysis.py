@@ -1,4 +1,7 @@
 import json
+import subprocess
+import sys
+from pathlib import Path
 
 from analyze_kri_mismatches import _extract_kri_mismatches, analyze
 from main import write_outputs
@@ -51,3 +54,39 @@ def test_extracts_all_mismatches_from_real_anomaly_schema():
     mismatches, key = _extract_kri_mismatches(anomalies)
     assert key == "error_type"
     assert len(mismatches) == 50
+
+
+def test_kri_mismatch_cli_writes_non_empty_reports(csv_factory, tmp_path):
+    raw_path = csv_factory([synthetic_row(**{"KRI RAS 9": "false"})])
+    findings, anomalies, stats = parse_findings(raw_path)
+    artifacts_dir = tmp_path / "artifacts"
+    write_outputs(findings, anomalies, stats, artifacts_dir, input_path=raw_path, run_timestamp="cli")
+    reports_dir = tmp_path / "reports"
+    script = Path(__file__).parents[1] / "analyze_kri_mismatches.py"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--raw", str(raw_path),
+            "--findings", str(artifacts_dir / "obj_findings.jsonl"),
+            "--anomalies", str(artifacts_dir / "parser_anomalies.json"),
+            "--output-dir", str(reports_dir),
+        ],
+        cwd=script.parent,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    json_report = reports_dir / "PARSER-KRI_Mismatch_Analysis.json"
+    markdown_report = reports_dir / "PARSER-KRI_Mismatch_Analysis.md"
+    assert completed.returncode == 0, completed.stderr
+    assert json_report.is_file()
+    assert markdown_report.is_file()
+    assert markdown_report.stat().st_size > 0
+    assert json.loads(json_report.read_text(encoding="utf-8"))["total_kri_mismatches"] == 1
+    assert "Total KRI mismatches: 1" in completed.stdout
+    assert "Identification key: error_type" in completed.stdout
+    assert f"JSON report: {json_report.resolve()}" in completed.stdout
+    assert f"Markdown report: {markdown_report.resolve()}" in completed.stdout

@@ -98,7 +98,9 @@ def analyze(raw_path: Path, findings_path: Path, anomalies_path: Path, output_di
         "cases": cases,
     }
     output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "PARSER-KRI_Mismatch_Analysis.json").write_text(
+    json_report_path = output_dir / "PARSER-KRI_Mismatch_Analysis.json"
+    markdown_report_path = output_dir / "PARSER-KRI_Mismatch_Analysis.md"
+    json_report_path.write_text(
         json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     rows = "\n".join(
@@ -129,7 +131,13 @@ def analyze(raw_path: Path, findings_path: Path, anomalies_path: Path, output_di
 |---:|---|---|---:|---:|---|
 {rows}
 """
-    (output_dir / "PARSER-KRI_Mismatch_Analysis.md").write_text(markdown, encoding="utf-8")
+    markdown_report_path.write_text(markdown, encoding="utf-8")
+    if not json_report_path.is_file() or json_report_path.stat().st_size == 0:
+        raise RuntimeError(f"JSON report was not written: {json_report_path}")
+    if not markdown_report_path.is_file() or markdown_report_path.stat().st_size == 0:
+        raise RuntimeError(f"Markdown report was not written: {markdown_report_path}")
+    report["json_report"] = str(json_report_path.resolve())
+    report["markdown_report"] = str(markdown_report_path.resolve())
     return report
 
 
@@ -141,9 +149,11 @@ def main() -> int:
     cli.add_argument("--output-dir", default="output")
     args = cli.parse_args()
     report = analyze(Path(args.raw), Path(args.findings), Path(args.anomalies), Path(args.output_dir))
-    print(f"Total KRI mismatches              : {report['total_kri_mismatches']}")
-    print(f"Clé d'identification              : {report['identification_key']}")
-    print(f"Répartition par cause             : {report['distribution_by_cause']}")
+    print(f"Total KRI mismatches: {report['total_kri_mismatches']}")
+    print(f"Identification key: {report['identification_key']}")
+    print(f"Répartition par catégorie: {report['distribution_by_cause']}")
+    print(f"JSON report: {report['json_report']}")
+    print(f"Markdown report: {report['markdown_report']}")
     print(f"Nombre réellement corrigeables    : {report['actually_correctable']}")
     print(f"Nombre conservés en warning       : {report['legitimately_kept_as_warning']}")
     print(f"Nombre nécessitant validation     : {report['requiring_business_validation']}")
