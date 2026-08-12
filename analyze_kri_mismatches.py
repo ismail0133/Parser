@@ -16,6 +16,24 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
         return [json.loads(line) for line in stream if line.strip()]
 
 
+def _extract_kri_mismatches(payload: Any) -> tuple[list[dict[str, Any]], str]:
+    anomalies = payload.get("anomalies", payload) if isinstance(payload, dict) else payload
+    if not isinstance(anomalies, list):
+        raise RuntimeError("The anomalies artifact must be a JSON list or contain an 'anomalies' list")
+    identification_keys = ("error_type", "type", "anomaly_type", "code")
+    matching_key = next(
+        (key for key in identification_keys if any(item.get(key) == "KRI_MISMATCH" for item in anomalies)),
+        None,
+    )
+    if matching_key is None:
+        available = sorted({key for item in anomalies if isinstance(item, dict) for key in item})
+        raise RuntimeError(
+            "No KRI_MISMATCH found with a supported identification key. "
+            f"Available keys: {available}"
+        )
+    return [item for item in anomalies if item.get(matching_key) == "KRI_MISMATCH"], matching_key
+
+
 def _classify(source: bool | None, calculated: dict[str, Any]) -> tuple[str, str]:
     if calculated["status"] != "COMPUTED":
         return "MISSING_REQUIRED_CONTEXT", "The individual KRI condition is not computable"
@@ -33,9 +51,10 @@ def analyze(raw_path: Path, findings_path: Path, anomalies_path: Path, output_di
     anomalies = json.loads(anomalies_path.read_text(encoding="utf-8"))
     if len(raw) != len(findings):
         raise RuntimeError(f"RAW/findings count mismatch: {len(raw)} != {len(findings)}")
-    mismatch_rows = sorted({int(item["row_index"]) for item in anomalies if item["error_type"] == "KRI_MISMATCH"})
+    mismatches, identification_key = _extract_kri_mismatches(anomalies)
     cases = []
-    for row_index in mismatch_rows:
+    for anomaly in mismatches:
+        row_index = int(anomaly["row_index"])
         source_row = raw[row_index - 1]
         finding = findings[row_index - 1]
         server = finding.get("server") or {}
@@ -71,6 +90,7 @@ def analyze(raw_path: Path, findings_path: Path, anomalies_path: Path, output_di
     distribution = Counter(item["category"] for item in cases)
     report = {
         "total_kri_mismatches": len(cases),
+        "identification_key": identification_key,
         "distribution_by_cause": dict(distribution),
         "actually_correctable": sum(item["category"] in {"CALCULATION_RULE_ISSUE", "DATA_NORMALIZATION_ISSUE"} for item in cases),
         "legitimately_kept_as_warning": sum(item["category"] in {"SOURCE_VALUE_DIFFERS", "GRAIN_MISMATCH"} for item in cases),
@@ -92,6 +112,7 @@ def analyze(raw_path: Path, findings_path: Path, anomalies_path: Path, output_di
 | Metric | Value |
 |---|---:|
 | Total KRI mismatches | {report['total_kri_mismatches']} |
+| Identification key | `{report['identification_key']}` |
 | Actually correctable | {report['actually_correctable']} |
 | Legitimately kept as warning | {report['legitimately_kept_as_warning']} |
 | Requiring business validation | {report['requiring_business_validation']} |
@@ -121,6 +142,7 @@ def main() -> int:
     args = cli.parse_args()
     report = analyze(Path(args.raw), Path(args.findings), Path(args.anomalies), Path(args.output_dir))
     print(f"Total KRI mismatches              : {report['total_kri_mismatches']}")
+    print(f"Clé d'identification              : {report['identification_key']}")
     print(f"Répartition par cause             : {report['distribution_by_cause']}")
     print(f"Nombre réellement corrigeables    : {report['actually_correctable']}")
     print(f"Nombre conservés en warning       : {report['legitimately_kept_as_warning']}")

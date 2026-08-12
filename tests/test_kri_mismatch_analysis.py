@@ -1,6 +1,6 @@
 import json
 
-from analyze_kri_mismatches import analyze
+from analyze_kri_mismatches import _extract_kri_mismatches, analyze
 from main import write_outputs
 from src.parser import parse_findings
 from tests.conftest import synthetic_row
@@ -32,3 +32,22 @@ def test_kri_mismatch_analysis_artifacts(csv_factory, tmp_path):
     assert (output / "PARSER-KRI_Mismatch_Analysis.md").is_file()
     persisted = json.loads((output / "PARSER-KRI_Mismatch_Analysis.json").read_text(encoding="utf-8"))
     assert persisted["cases"][0]["authenticated_scan"] is True
+
+
+def test_extracts_all_mismatches_from_real_anomaly_schema():
+    anomalies = [
+        {
+            "row_index": index,
+            "rem_key_id": f"rem-{index}",
+            "field": "KRI RAS 9",
+            "value": "false",
+            "severity": "WARNING",
+            "error_type": "KRI_MISMATCH",
+            "message": "Source KRI differs from calculated KRI",
+            "classification": "WARNING",
+        }
+        for index in range(1, 51)
+    ]
+    mismatches, key = _extract_kri_mismatches(anomalies)
+    assert key == "error_type"
+    assert len(mismatches) == 50
