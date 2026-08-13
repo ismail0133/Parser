@@ -465,3 +465,86 @@ python analyze_kri_mismatches.py `
   --findings "output/obj_findings.jsonl" `
   --anomalies "output/parser_anomalies.json" `
   --output-dir "output"
+
+
+1. unique_id du FindingQuelle est la règle officielle permettant de construire le unique_id d’un obj_finding ?Est-ce un identifiant déjà disponible dans une source ou doit-il être généré ?S’il doit être généré, quels champs doivent être utilisés ?Et surtout, est-ce que cet identifiant doit rester identique pour le même finding entre plusieurs exécutions du Parser ?
+
+2. remediation_id lorsque REM_KEY_ID est absentActuellement, lorsque REM_KEY_ID est renseigné, je l’utilise comme remediation_id.Dans le cas où REM_KEY_ID est vide ou absent, quel comportement doit être appliqué ?Doit-on laisser remediation_id = null ou existe-t-il une règle de fallback officielle basée sur une autre donnée ?
+
+3. Mapping de Proposed OwnerLa colonne Proposed Owner existe bien dans le fichier RAW Finding.Je voudrais savoir à quelle propriété exacte de obj_finding elle doit correspondre.Est-ce le propriétaire de la remédiation, le propriétaire du finding, une équipe cible ou une autre information métier ?Je souhaite connaître le mapping exact afin de ne pas affecter cette colonne arbitrairement.
+
+4. remediation_strategy.strategy_typeEst-ce au Parser de renseigner remediation_strategy.strategy_type, ou est-ce une information qui doit être déterminée plus tard par l’Analyst ?Si c’est au Parser de le renseigner, quelles sont les valeurs possibles et quelle règle permet de déterminer le bon strategy_type ?
+
+5. Grain de la colonne RAW KRI RAS 9La formule globale du KRI RAS 9 est déjà connue.Ma question concerne uniquement la valeur KRI RAS 9 présente sur chaque ligne du fichier RAW Finding.
+
+Que représente exactement cette valeur :
+
+une information au niveau du finding ?
+
+une information au niveau du serveur ?
+
+une information au niveau de l’application ?
+
+ou une valeur déjà agrégée ?
+
+J’ai actuellement 50 KRI_MISMATCH, tous identifiés comme GRAIN_MISMATCH. J’ai donc besoin de connaître le niveau exact auquel la valeur RAW doit être comparée avec le KRI recalculé.
+
+6. Accès CIB APM.CSV Pour finaliser l’enrichissement Application prévu dans le Parser, j’aurais également besoin :
+
+ du fichier Excel CIB APM exporté au format CSV.
+
+Cela me permettra de construire/utiliser les obj_applications et d’effectuer l’enrichissement des obj_findings conformément à la spécification.
+
+7. Accès à une API d’IA générative pour les agentsPour commencer l’implémentation des agents IA et leur orchestration avec LangChain/LangGraph, j’aurais également besoin de savoir quelle API d’IA générative / quel modèle LLM est autorisé et disponible dans l’environnement BNP.
+
+J’aurais notamment besoin de connaître :
+
+le fournisseur ou service LLM autorisé ;
+
+l’endpoint/API à utiliser ;
+
+le mode d’authentification ;
+
+le ou les modèles disponibles ;
+
+les éventuelles limitations de tokens, quotas ou rate limits ;
+
+les règles de sécurité concernant les données envoyées au modèle ;
+
+si les agents doivent utiliser un modèle commun ou si plusieurs modèles sont prévus selon les agents.
+
+Cet accès sera nécessaire pour implémenter la couche agentique, notamment le Parser Agent puis les autres agents prévus dans l’architecture multi-agents.
+
+## Parser Agent V0
+
+Le Parser Agent V0 orchestre le Parser V1 avec un workflow LangGraph déterministe :
+
+- le Parser V1 reste le moteur unique pour le chargement, le nettoyage, le mapping, les calculs et la validation ;
+- le Parser Agent valide la présence du fichier, lance le Parser une seule fois, lit `ParserResult` et décide de continuer ou de s'arrêter ;
+- les warnings `KRI_MISMATCH` déclenchent l'analyse KRI existante, sans retry supplémentaire ni modification de la valeur RAW ;
+- le LLM est `NOT_CONFIGURED` et n'intervient dans aucun calcul ;
+- PostgreSQL est `NOT_CONFIGURED` et la persistance reste `LOCAL_ONLY` ;
+- la source CIB APM est `WAITING_FOR_SOURCE`, avec enrichissement `SKIPPED_NO_SOURCE` ;
+- les points `TO_VALIDATE` sont transmis au futur Orchestrator sans être résolus automatiquement.
+
+Installer les dépendances puis lancer l'Agent depuis PowerShell :
+
+```powershell
+python -m pip install -r requirements.txt
+python parser_agent_main.py --input "data/finding_list_fixed.csv"
+```
+
+Choisir un autre répertoire de sortie si nécessaire :
+
+```powershell
+python parser_agent_main.py `
+  --input "data/finding_list_fixed.csv" `
+  --output-dir "output"
+```
+
+Le Parser Agent produit notamment :
+
+- `PARSER-Agent_Result-<timestamp>.json` pour le futur Orchestrator ;
+- `PARSER-Agent_Report-<timestamp>.md` pour une lecture humaine ;
+- les artefacts habituels du Parser V1 ;
+- les rapports `PARSER-KRI_Mismatch_Analysis.*` lorsqu'un `KRI_MISMATCH` est présent.

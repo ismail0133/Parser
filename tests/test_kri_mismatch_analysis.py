@@ -11,8 +11,8 @@ from tests.conftest import synthetic_row
 
 def test_kri_aggregate_uses_distinct_sensitive_hosts(csv_factory):
     rows = [
-        synthetic_row(REM_KEY_ID="1", HOSTNAME="host-a", **{"KRI RAS 9": "false"}),
-        synthetic_row(REM_KEY_ID="2", HOSTNAME="host-a", CVE="CVE-2026-9999"),
+        synthetic_row(REM_KEY_ID="1", HOSTNAME="host-a", AGE="999", **{"KRI RAS 9": "false"}),
+        synthetic_row(REM_KEY_ID="2", HOSTNAME="host-a", CVE="CVE-2026-9999", AGE="999"),
         synthetic_row(REM_KEY_ID="3", HOSTNAME="host-b", **{"Action Plan": "False positive"}),
     ]
     _, _, stats = parse_findings(csv_factory(rows))
@@ -25,7 +25,7 @@ def test_kri_aggregate_uses_distinct_sensitive_hosts(csv_factory):
 
 
 def test_kri_mismatch_analysis_artifacts(csv_factory, tmp_path):
-    raw_path = csv_factory([synthetic_row(**{"KRI RAS 9": "false"})])
+    raw_path = csv_factory([synthetic_row(AGE="999", **{"KRI RAS 9": "false"})])
     findings, anomalies, stats = parse_findings(raw_path)
     output = tmp_path / "output"
     write_outputs(findings, anomalies, stats, output, input_path=raw_path, run_timestamp="x")
@@ -57,7 +57,7 @@ def test_extracts_all_mismatches_from_real_anomaly_schema():
 
 
 def test_kri_mismatch_cli_writes_non_empty_reports(csv_factory, tmp_path):
-    raw_path = csv_factory([synthetic_row(**{"KRI RAS 9": "false"})])
+    raw_path = csv_factory([synthetic_row(AGE="999", **{"KRI RAS 9": "false"})])
     findings, anomalies, stats = parse_findings(raw_path)
     artifacts_dir = tmp_path / "artifacts"
     write_outputs(findings, anomalies, stats, artifacts_dir, input_path=raw_path, run_timestamp="cli")
