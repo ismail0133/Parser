@@ -19,4 +19,5 @@ class ParserResult(BaseModel):
     anomalies_artifact: str
     analysis_report_artifact: str
     open_points: list[dict[str, Any]]
+    kri_ras9: dict[str, Any]
     duration_seconds: float

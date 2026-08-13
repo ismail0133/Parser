@@ -19,6 +19,8 @@ def main() -> int:
     print(f"Errors            : {parser.errors if parser else 0}")
     print(f"Warnings          : {parser.warnings if parser else 0}")
     print(f"KRI mismatches    : {result.kri.mismatches}")
+    print(f"KRI percentage    : {result.kri.percentage}")
+    print(f"KRI target <30%   : {result.kri.business_target_met}")
     print(f"Application       : {result.application_enrichment['status']}")
     print(f"LLM               : {result.llm_status}")
     print(f"PostgreSQL        : {result.dependencies['postgresql']}")

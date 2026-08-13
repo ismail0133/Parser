@@ -22,6 +22,10 @@ class AgentKriSummary(BaseModel):
     classification: str | None = None
     distribution: dict[str, int] = Field(default_factory=dict)
     automatically_correctable: int = 0
+    percentage: float | None = None
+    business_target: str = "< 30%"
+    business_target_met: bool | None = None
+    source_inconsistencies: int = 0
 
 
 class ParserAgentResult(BaseModel):
@@ -47,4 +51,3 @@ class ParserAgentResult(BaseModel):
     next_action: Literal["CONTINUE", "STOP"]
     reason: str | None = None
     error_message: str | None = None
-

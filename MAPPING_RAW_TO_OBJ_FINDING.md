@@ -5,7 +5,7 @@ Ce mapping applique strictement les règles communiquées depuis le document « 
 | # | source_column | target_obj_finding_property | category | transformation | status | comment |
 |---:|---|---|---|---|---|---|
 | 1 | `Month` | `as_of_date` | NORMALIZED | Convertir en date. Compléter les parties absentes avec la date courante : année, mois ou jour selon le format reçu. | CONFIRMED | Nom source confirmé par le CSV réel. Ajouter une anomalie `INFO` dès qu'une partie est déduite. Exemples documentaires : `May` → `2026-05-13`, `5-2` → `2026-05-02` pour une date courante au 13/06/2026. |
-| 2 | `REM_KEY_ID` | `remediation_id` | COPY / CALCULATED | Copier la valeur nettoyée lorsqu'elle est présente. Si elle est absente, la calculer uniquement avec la formule officielle. | CONFIRMED / TO_VALIDATE | La cible et la copie sont confirmées. La formule de fallback dépend du document « Object - Finding object specification » encore absent. `Init only = Yes`. |
+| 2 | `REM_KEY_ID` | `remediation_id` | COPY / CONTROL | Copier la valeur nettoyée lorsqu'elle est présente. Si elle est absente, conserver `None` et produire `MISSING_REMEDIATION_ID`. | CONFIRMED | Aucun fallback automatique. Le contrôle est non bloquant. |
 | 3 | `STATUS_REM` | aucune | NOT USED | Ne pas mapper. | NOT_USED | Explicitement non utilisé. |
 | 4 | `HOSTNAME` | `hostname` | NORMALIZED | Nettoyer et valider selon la regex/documentation hostname. | CONFIRMED | La propriété cible est confirmée. La regex exacte devra être extraite de la documentation avant validation stricte. |
 | 5 | `OPERATING_SYSTEM` | `server.os_name`, `server.os_version` | NORMALIZED | Séparer sur `_` ; texte → `os_name`, valeur numérique → `os_version`. | CONFIRMED | Exemple : `RHEL_9.6` → `RHEL`, `9.6`. |
@@ -13,7 +13,7 @@ Ce mapping applique strictement les règles communiquées depuis le document « 
 | 7 | `AUID` | `application.auid` | NORMALIZED | Nettoyer et valider avec `AP[0-9]+`. | CONFIRMED | Source prioritaire de l'AUID applicatif. |
 | 8 | `ENVIRONMENT` | `server.environment_detail`, `server.environment` | NORMALIZED / CALCULATED | Appliquer exclusivement la table documentaire d'environnement. | CONFIRMED | Valeur non répertoriée → `None` et anomalie ; aucune valeur par défaut. |
 | 9 | `CODE_APP` | `application.auid` | FALLBACK | Utiliser seulement si `AUID` ne permet pas d'obtenir un `application.auid` valide. | FALLBACK | Ne jamais remplacer un AUID valide. La valeur de fallback doit aussi respecter le format AUID attendu. |
-| 10 | `CVE` | `cve` | NORMALIZED | Nettoyer et valider selon le format CVE documenté. | CONFIRMED | Une valeur invalide génère une anomalie sans interrompre le fichier. |
+| 10 | `CVE` | `cve`, `unique_id` | NORMALIZED / COPY | Nettoyer et valider le CVE, puis affecter la même valeur à `unique_id`. | CONFIRMED | `unique_id = CVE`. Aucune contrainte d'unicité ; CVE absent donne `unique_id = None`. |
 | 11 | `title` | `cve_detail.title` | COPY | Copier après nettoyage technique. | CONFIRMED | Nullable selon le modèle final. |
 | 12 | `PRIORITY` | `priority` | NORMALIZED | `PR1 → 1`, `PR2 → 2`, `PR3 → 3`, `PR4 → 4`. | CONFIRMED | Toute autre valeur → `None` et anomalie. Ne pas enrichir depuis Application. |
 | 13 | `AFFECTED_PRODUCTS_REVIEWED` | `affected_component` | COPY | Copier après nettoyage technique. | CONFIRMED | Mapping direct confirmé. |
@@ -34,9 +34,9 @@ Ce mapping applique strictement les règles communiquées depuis le document « 
 | 28 | `Production Manager` | aucune | NOT USED | Ne pas mapper. | NOT_USED | Explicitement non utilisé. |
 | 29 | `SEVERITY_LEVEL` | `severity_level` | NORMALIZED | Copier/nettoyer puis valider selon le référentiel de sévérité. | CONFIRMED | Sert au calcul du SLA et du KRI. Valeur inconnue → anomalie. |
 | 30 | `PROPOSED_ACTION` | `proposed_action` | COPY / NORMALIZED | Copier après nettoyage et appliquer uniquement le référentiel documentaire disponible. | CONFIRMED | Mapping cible confirmé. |
-| 31 | `Proposed Owner` | propriété cible à confirmer | TO_VALIDATE | Reconnaître la colonne dans le schéma source, mais ne pas la mapper actuellement. | TO_VALIDATE | Le nom source est confirmé par le CSV réel. La propriété cible et la règle métier ne sont pas confirmées ; aucune valeur n'est inventée. |
-| 32 | `KRI RAS 9` | aucune copie directe ; résultat KRI calculé | CALCULATED / CONTROL | Utiliser la colonne uniquement pour confirmer le résultat calculé. | CALCULATED | Calcul documentaire : serveur sensible, scan authentifié, vulnérabilité Critical/Very High hors SLA, faux positifs exclus. Les sources exactes du scan authentifié et certains détails du calcul doivent rester `TO_VALIDATE` tant qu'ils ne sont pas disponibles. |
-| 33 | `Action Plan` | `remediation_strategy.description`, `remediation_strategy.strategy_type`, `false_positive`, `false_positive_to_confirm` | COPY / CALCULATED | Description = valeur non vide. Calculer les indicateurs false positive sans distinction de casse. Déduire le type de stratégie uniquement selon la règle officielle. | CONFIRMED / CALCULATED / TO_VALIDATE | `false_positive = true` si égal à `False positive`. `false_positive_to_confirm = true` si contient `False positive to be confirmed`, sauf valeur explicitement fausse. La règle de `strategy_type` reste à fournir. |
+| 31 | `Proposed Owner` | `ownership` | COPY | Conserver la valeur source nettoyée ou `None`. | CONFIRMED / DEFERRED_V2 | Routage automatique connu : Infrastructure → APS, Développement → ADM. Automatisation hors Parser V1. |
+| 32 | `KRI RAS 9` | contrôle KRI serveur | CALCULATED / CONTROL | Contrôler les valeurs source au grain serveur, regroupées par hostname. | CONFIRMED | Grain `SERVER / DISTINCT_HOSTNAME`. Plus aucune comparaison finding-level. Objectif métier séparé : `< 30%`. |
+| 33 | `Action Plan` | `remediation_strategy.description`, `false_positive`, `false_positive_to_confirm` | COPY / CALCULATED | Description = valeur non vide. Calculer les indicateurs false positive sans distinction de casse. | CONFIRMED / CALCULATED | `strategy_type` reste `None` : responsabilité de l'Analyst. |
 | 34 | `ETA` | `eta` | NORMALIZED | Une valeur absente reste `None`. Convertir uniquement une valeur non vide selon les formats documentés. Forcer à `None` lorsque `false_positive = true`. | CONFIRMED | Seule une valeur présente mais invalide produit `INVALID_DATE`. Aucune date ne doit être inventée. |
 
 ## Calculs transverses confirmés
@@ -96,10 +96,6 @@ Le résultat reste `None` si `age` ou `sla` est `None`.
 
 ```python
 FIELDS_TO_VALIDATE = [
-    "unique_id_formula",
-    "remediation_id_fallback_formula",
-    "proposed_owner_target_property_and_business_rule",
-    "remediation_strategy.strategy_type_rules",
     "hostname_exact_regex",
     "cve_exact_validation_policy",
     "accepted_input_date_formats",
@@ -109,8 +105,7 @@ FIELDS_TO_VALIDATE = [
     "application.vital_source",
     "application.cis_source",
     "authenticated_scan_source",
-    "kri_ras9_complete_formula_and_output_property",
 ]
 ```
 
-`unique_id` ne doit recevoir aucun UUID aléatoire. `remediation_id` ne doit pas être calculé en l'absence de sa formule officielle. `Proposed Owner` reste ignorée tant que sa propriété cible et sa règle métier ne sont pas confirmées.
+Décisions validées : `unique_id = CVE`, `remediation_id = None` sans `REM_KEY_ID`, `strategy_type` relève de l'Analyst et le KRI est contrôlé au grain serveur. Le routage automatique de `Proposed Owner` est différé en V2.

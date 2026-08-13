@@ -57,9 +57,10 @@ def _render_report(result: ParserAgentResult) -> str:
 def _build_result(state: dict[str, Any], input_file: str) -> ParserAgentResult:
     parser_result = state.get("parser_result")
     kri_analysis = state.get("kri_analysis") or {}
-    distribution = kri_analysis.get("distribution_by_cause", {})
-    classification = next(iter(distribution)) if len(distribution) == 1 else None
+    distribution = kri_analysis.get("warning_distribution", {})
+    classification = kri_analysis.get("classification")
     parser_summary = None
+    parser_kri = {}
     input_rows = 0
     application_status = state.get("application_enrichment_status", "SKIPPED_NO_SOURCE")
     open_points = _open_point_names()
@@ -75,22 +76,28 @@ def _build_result(state: dict[str, Any], input_file: str) -> ParserAgentResult:
             retry_count=parser_result.retry_count,
             max_attempts=parser_result.max_attempts,
         )
+        parser_kri = parser_result.kri_ras9.get("aggregate", {})
     return ParserAgentResult(
         status=state.get("agent_status", "FAILED"),
         input=AgentInput(file=input_file, rows=input_rows),
         parser=parser_summary,
         kri=AgentKriSummary(
-            mismatches=kri_analysis.get("total_kri_mismatches", 0),
+            mismatches=kri_analysis.get("server_level_mismatches", 0),
             classification=classification,
             distribution=distribution,
             automatically_correctable=kri_analysis.get("actually_correctable", 0),
+            percentage=kri_analysis.get("kri_percentage", parser_kri.get("percentage")),
+            business_target_met=kri_analysis.get(
+                "business_target_met", parser_kri.get("business_target_met")
+            ),
+            source_inconsistencies=kri_analysis.get("source_inconsistencies", 0),
         ),
         application_enrichment={"status": application_status},
         dependencies=state.get("dependencies", {
             "cib_apm": "WAITING_FOR_SOURCE", "postgresql": "NOT_CONFIGURED",
             "llm_api": "NOT_CONFIGURED",
         }),
-        requires_business_validation=bool(open_points or kri_analysis.get("requiring_business_validation", 0)),
+        requires_business_validation=bool(open_points),
         open_points=open_points,
         artifacts=state.get("artifacts", {}),
         next_action=state.get("next_action", "STOP"),

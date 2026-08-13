@@ -73,4 +73,5 @@ def test_parser_result_and_skipped_application_source(csv_factory, tmp_path):
     assert result["component"] == "PARSER"
     assert result["application_enrichment_status"] == "SKIPPED_NO_SOURCE"
     assert result["max_attempts"] == 3
+    assert result["kri_ras9"]["aggregate"]["target_percentage"] == 30
     assert paths["parser_result"].name == "PARSER-Result-20260812-120000.json"

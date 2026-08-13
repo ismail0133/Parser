@@ -212,7 +212,7 @@ La dernière exécution complète connue sur le fichier de validation actuel a p
 
 Ces valeurs correspondent à cette exécution de validation. Elles ne constituent pas des valeurs universelles pour tout fichier d'entrée.
 
-Les 50 warnings observés correspondent à `KRI_MISMATCH`. Ils doivent être analysés et conservés comme éléments traçables. Un mismatch indique une différence entre la valeur KRI provenant de la source et la condition KRI calculée par le parser. Il ne doit pas être corrigé automatiquement tant que la règle métier officielle ne détermine pas quelle valeur fait foi.
+Ces 50 warnings historiques provenaient d'une comparaison finding-level. Le grain métier est désormais confirmé au niveau serveur. Le nouveau contrôle regroupe les lignes par hostname et produit, selon le cas, `KRI_SERVER_MISMATCH`, `KRI_SOURCE_SERVER_INCONSISTENT` ou `KRI_SOURCE_SERVER_UNINTERPRETABLE`. Les quantités après migration doivent être mesurées sur un nouveau run réel.
 
 ### Validation d'un échantillon
 
@@ -226,13 +226,7 @@ Une validation RAW → `obj_finding` a été effectuée sur un échantillon repr
 | Errors | 0 |
 | TO_VALIDATE | 20 |
 
-`TO_VALIDATE: 20` ne signifie pas que les 20 objets sont incorrects. Le script applique à chaque cas des contrôles dont la règle reste volontairement ouverte, notamment :
-
-- la propriété cible et la règle métier de `Proposed Owner` ;
-- la déduction de `remediation_strategy.strategy_type` ;
-- la formule d'agrégation globale du KRI RAS 9.
-
-Un objet peut donc être conforme sur tous les champs calculables tout en contenant un ou plusieurs contrôles `TO_VALIDATE`.
+Les anciens résultats `TO_VALIDATE` précèdent les décisions métier désormais validées. Voir `TO_VALIDATE_PARSER.md` pour la séparation actuelle entre décisions validées, évolutions V2 et dépendances externes.
 
 ## Artefacts générés
 
@@ -306,12 +300,7 @@ Le script exige le même nombre de lignes RAW et d'objets JSONL afin de garantir
 
 Le parser ne copie jamais directement la colonne source `KRI RAS 9` comme résultat calculé.
 
-La condition au niveau d'un finding est calculée à partir de :
-- serveur sensible ;
-- scan authentifié par défaut, sauf indication explicite contraire ;
-- sévérité Critical ou Very High ;
-- finding hors SLA ;
-- faux positif exclu.
+La validation source et le calcul sont réalisés au grain serveur, jamais par comparaison booléenne finding par finding.
 
 Le KRI global est calculé au grain `hostname` distinct selon la formule documentée :
 
@@ -330,7 +319,7 @@ L'interprétation documentée est :
 - Unsatisfactory : > 30 % et <= 50 %
 - Critical : > 50 % et <= 100 %
 
-L'agrégation globale est disponible dans `stats.kri_ras9.aggregate`. La comparaison de la colonne source avec la condition individuelle reste traçable par `KRI_MISMATCH` tant que le grain exact de la valeur source n'est pas confirmé.
+L'agrégation globale est disponible dans `stats.kri_ras9.aggregate`. Les catégories historiques sont conservées. L'objectif métier est exposé séparément par `business_target_met = percentage < 30` : exactement 30 % n'atteint pas l'objectif.
 
 Analyser les mismatches sur les artefacts d'un run complet :
 
@@ -363,28 +352,32 @@ application_enrichment_status = SKIPPED_NO_SOURCE
 
 Ce statut n'est pas un échec global.
 
-## TO_VALIDATE restant
+## VALIDATED BUSINESS DECISIONS
 
-- formule officielle de `unique_id` ;
-- formule de fallback de `remediation_id` lorsque `REM_KEY_ID` est absent ;
-- propriété cible et règle métier de la colonne source `Proposed Owner` ;
-- règles de déduction de `remediation_strategy.strategy_type` ;
-- grain exact de la valeur source `KRI RAS 9` utilisée pour la comparaison ;
-- regex hostname exacte ;
-- politique CVE finale ;
-- formats exhaustifs des dates ;
-- type final et séparateur de `solution_links` ;
-- règle de préséance de l'enrichissement Application.
+- `unique_id = CVE`, sans contrainte d'unicité et sans fallback si le CVE est absent ;
+- `remediation_id = REM_KEY_ID`, sinon `None` avec contrôle non bloquant ;
+- `Proposed Owner` est conservé dans `ownership` ;
+- `remediation_strategy.strategy_type` relève de l'Analyst et reste `None` sans source ;
+- `KRI RAS 9` est au grain `SERVER / DISTINCT_HOSTNAME` avec objectif strict `< 30%`.
 
-Ces éléments ne sont ni inventés ni complétés automatiquement.
+## DEFERRED / V2
+
+- Routage automatique `Proposed Owner` : Infrastructure → APS, Développement → ADM.
+
+## EXTERNAL DEPENDENCIES
+
+- CIB APM : `WAITING_FOR_SOURCE` ;
+- API LLM : `NOT_CONFIGURED` ;
+- PostgreSQL : `NOT_CONFIGURED`, persistance `LOCAL_ONLY`.
+
+Les points techniques encore ouverts sont détaillés dans `TO_VALIDATE_PARSER.md`.
 
 ## Limites actuelles
 
-- Le parser ne génère aucun `unique_id` tant que sa formule officielle n'est pas disponible.
-- Un `remediation_id` absent reste non calculé faute de formule de fallback confirmée.
-- `Proposed Owner` est reconnu dans le schéma RAW, mais sa cible métier reste ouverte.
-- `remediation_strategy.strategy_type` reste `None` sans règle documentée.
-- Le calcul KRI disponible est une condition booléenne par finding, pas une agrégation globale.
+- Plusieurs findings peuvent partager le même `unique_id` car il correspond au CVE.
+- Un `remediation_id` absent reste `None` et déclenche `MISSING_REMEDIATION_ID`.
+- Le routage APS/ADM de `Proposed Owner` est différé en V2.
+- `remediation_strategy.strategy_type` relève de l'Analyst.
 - L'enrichissement Application est facultatif et dépend d'une source externe explicitement fournie au parser.
 - La validation des formats reste limitée aux règles actuellement documentées et testées.
 
@@ -394,9 +387,9 @@ Ces éléments ne sont ni inventés ni complétés automatiquement.
 |---|---|
 | Status dans cet environnement | `NOT READY` |
 | Date de vérification | 2026-08-12 |
-| Tests | 43 passed |
+| Tests | 77 passed |
 | Application enrichment | `SKIPPED_NO_SOURCE` |
-| KRI | Condition finding et agrégation globale implémentées ; analyse des 50 mismatches à exécuter sur les artefacts réels |
+| KRI | Calcul et contrôle source au grain serveur ; objectif métier strict `< 30%` |
 | Run final 29 999 lignes | Non exécuté ici : CSV confidentiel absent de cet environnement |
 | Known TO_VALIDATE | Voir section précédente |
 | Next step après validation V1 | PostgreSQL persistence |
@@ -404,124 +397,13 @@ Ces éléments ne sont ni inventés ni complétés automatiquement.
 Le statut pourra devenir `PARSER V1 = READY` après exécution du run complet sur le poste contenant `data/finding_list_fixed.csv`, génération de `ParserResult` et analyse documentée des warnings restants.
 
 
-python analyze_kri_mismatches.py `
-  --raw "data/finding_list_fixed.csv" `
-  --findings "output/obj_findings.jsonl" `
-  --anomalies "output/parser_anomalies.json" `
-  --output-dir "output"
-
-
-1. unique_id du FindingQuelle est la règle officielle permettant de construire le unique_id d’un obj_finding ?Est-ce un identifiant déjà disponible dans une source ou doit-il être généré ?S’il doit être généré, quels champs doivent être utilisés ?Et surtout, est-ce que cet identifiant doit rester identique pour le même finding entre plusieurs exécutions du Parser ?
-
-2. remediation_id lorsque REM_KEY_ID est absentActuellement, lorsque REM_KEY_ID est renseigné, je l’utilise comme remediation_id.Dans le cas où REM_KEY_ID est vide ou absent, quel comportement doit être appliqué ?Doit-on laisser remediation_id = null ou existe-t-il une règle de fallback officielle basée sur une autre donnée ?
-
-3. Mapping de Proposed OwnerLa colonne Proposed Owner existe bien dans le fichier RAW Finding.Je voudrais savoir à quelle propriété exacte de obj_finding elle doit correspondre.Est-ce le propriétaire de la remédiation, le propriétaire du finding, une équipe cible ou une autre information métier ?Je souhaite connaître le mapping exact afin de ne pas affecter cette colonne arbitrairement.
-
-4. remediation_strategy.strategy_typeEst-ce au Parser de renseigner remediation_strategy.strategy_type, ou est-ce une information qui doit être déterminée plus tard par l’Analyst ?Si c’est au Parser de le renseigner, quelles sont les valeurs possibles et quelle règle permet de déterminer le bon strategy_type ?
-
-5. Grain de la colonne RAW KRI RAS 9La formule globale du KRI RAS 9 est déjà connue.Ma question concerne uniquement la valeur KRI RAS 9 présente sur chaque ligne du fichier RAW Finding.
-
-Que représente exactement cette valeur :
-
-une information au niveau du finding ?
-
-une information au niveau du serveur ?
-
-une information au niveau de l’application ?
-
-ou une valeur déjà agrégée ?
-
-J’ai actuellement 50 KRI_MISMATCH, tous identifiés comme GRAIN_MISMATCH. J’ai donc besoin de connaître le niveau exact auquel la valeur RAW doit être comparée avec le KRI recalculé.
-
-6. Accès CIB APM.CSV Pour finaliser l’enrichissement Application prévu dans le Parser, j’aurais également besoin :
-
- du fichier Excel CIB APM exporté au format CSV.
-
-Cela me permettra de construire/utiliser les obj_applications et d’effectuer l’enrichissement des obj_findings conformément à la spécification.
-
-7. Accès à une API d’IA générative pour les agentsPour commencer l’implémentation des agents IA et leur orchestration avec LangChain/LangGraph, j’aurais également besoin de savoir quelle API d’IA générative / quel modèle LLM est autorisé et disponible dans l’environnement BNP.
-
-J’aurais notamment besoin de connaître :
-
-le fournisseur ou service LLM autorisé ;
-
-l’endpoint/API à utiliser ;
-
-le mode d’authentification ;
-
-le ou les modèles disponibles ;
-
-les éventuelles limitations de tokens, quotas ou rate limits ;
-
-les règles de sécurité concernant les données envoyées au modèle ;
-
-si les agents doivent utiliser un modèle commun ou si plusieurs modèles sont prévus selon les agents.
-
-Cet accès sera nécessaire pour implémenter la couche agentique, notamment le Parser Agent puis les autres agents prévus dans l’architecture multi-agents.
-
-
-python analyze_kri_mismatches.py `
-  --raw "data/finding_list_fixed.csv" `
-  --findings "output/obj_findings.jsonl" `
-  --anomalies "output/parser_anomalies.json" `
-  --output-dir "output"
-
-
-1. unique_id du FindingQuelle est la règle officielle permettant de construire le unique_id d’un obj_finding ?Est-ce un identifiant déjà disponible dans une source ou doit-il être généré ?S’il doit être généré, quels champs doivent être utilisés ?Et surtout, est-ce que cet identifiant doit rester identique pour le même finding entre plusieurs exécutions du Parser ?
-
-2. remediation_id lorsque REM_KEY_ID est absentActuellement, lorsque REM_KEY_ID est renseigné, je l’utilise comme remediation_id.Dans le cas où REM_KEY_ID est vide ou absent, quel comportement doit être appliqué ?Doit-on laisser remediation_id = null ou existe-t-il une règle de fallback officielle basée sur une autre donnée ?
-
-3. Mapping de Proposed OwnerLa colonne Proposed Owner existe bien dans le fichier RAW Finding.Je voudrais savoir à quelle propriété exacte de obj_finding elle doit correspondre.Est-ce le propriétaire de la remédiation, le propriétaire du finding, une équipe cible ou une autre information métier ?Je souhaite connaître le mapping exact afin de ne pas affecter cette colonne arbitrairement.
-
-4. remediation_strategy.strategy_typeEst-ce au Parser de renseigner remediation_strategy.strategy_type, ou est-ce une information qui doit être déterminée plus tard par l’Analyst ?Si c’est au Parser de le renseigner, quelles sont les valeurs possibles et quelle règle permet de déterminer le bon strategy_type ?
-
-5. Grain de la colonne RAW KRI RAS 9La formule globale du KRI RAS 9 est déjà connue.Ma question concerne uniquement la valeur KRI RAS 9 présente sur chaque ligne du fichier RAW Finding.
-
-Que représente exactement cette valeur :
-
-une information au niveau du finding ?
-
-une information au niveau du serveur ?
-
-une information au niveau de l’application ?
-
-ou une valeur déjà agrégée ?
-
-J’ai actuellement 50 KRI_MISMATCH, tous identifiés comme GRAIN_MISMATCH. J’ai donc besoin de connaître le niveau exact auquel la valeur RAW doit être comparée avec le KRI recalculé.
-
-6. Accès CIB APM.CSV Pour finaliser l’enrichissement Application prévu dans le Parser, j’aurais également besoin :
-
- du fichier Excel CIB APM exporté au format CSV.
-
-Cela me permettra de construire/utiliser les obj_applications et d’effectuer l’enrichissement des obj_findings conformément à la spécification.
-
-7. Accès à une API d’IA générative pour les agentsPour commencer l’implémentation des agents IA et leur orchestration avec LangChain/LangGraph, j’aurais également besoin de savoir quelle API d’IA générative / quel modèle LLM est autorisé et disponible dans l’environnement BNP.
-
-J’aurais notamment besoin de connaître :
-
-le fournisseur ou service LLM autorisé ;
-
-l’endpoint/API à utiliser ;
-
-le mode d’authentification ;
-
-le ou les modèles disponibles ;
-
-les éventuelles limitations de tokens, quotas ou rate limits ;
-
-les règles de sécurité concernant les données envoyées au modèle ;
-
-si les agents doivent utiliser un modèle commun ou si plusieurs modèles sont prévus selon les agents.
-
-Cet accès sera nécessaire pour implémenter la couche agentique, notamment le Parser Agent puis les autres agents prévus dans l’architecture multi-agents.
-
 ## Parser Agent V0
 
 Le Parser Agent V0 orchestre le Parser V1 avec un workflow LangGraph déterministe :
 
 - le Parser V1 reste le moteur unique pour le chargement, le nettoyage, le mapping, les calculs et la validation ;
 - le Parser Agent valide la présence du fichier, lance le Parser une seule fois, lit `ParserResult` et décide de continuer ou de s'arrêter ;
-- les warnings `KRI_MISMATCH` déclenchent l'analyse KRI existante, sans retry supplémentaire ni modification de la valeur RAW ;
+- les warnings KRI serveur déclenchent l'analyse existante, sans retry supplémentaire ni modification de la valeur RAW ;
 - le LLM est `NOT_CONFIGURED` et n'intervient dans aucun calcul ;
 - PostgreSQL est `NOT_CONFIGURED` et la persistance reste `LOCAL_ONLY` ;
 - la source CIB APM est `WAITING_FOR_SOURCE`, avec enrichissement `SKIPPED_NO_SOURCE` ;
@@ -547,4 +429,4 @@ Le Parser Agent produit notamment :
 - `PARSER-Agent_Result-<timestamp>.json` pour le futur Orchestrator ;
 - `PARSER-Agent_Report-<timestamp>.md` pour une lecture humaine ;
 - les artefacts habituels du Parser V1 ;
-- les rapports `PARSER-KRI_Mismatch_Analysis.*` lorsqu'un `KRI_MISMATCH` est présent.
+- les rapports `PARSER-KRI_Mismatch_Analysis.*` lorsqu'un warning KRI serveur est présent.

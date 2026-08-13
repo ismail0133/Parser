@@ -8,11 +8,9 @@ from src.models.finding import Anomaly, Finding
 
 
 OPEN_POINTS = [
-    {"field": "unique_id", "status": "TO_VALIDATE", "reason": "Official generation formula not available"},
-    {"field": "remediation_id", "status": "TO_VALIDATE", "reason": "Official fallback formula not available when REM_KEY_ID is missing"},
-    {"field": "Proposed Owner", "status": "TO_VALIDATE", "reason": "Target property and business mapping rule are not confirmed"},
-    {"field": "remediation_strategy.strategy_type", "status": "TO_VALIDATE", "reason": "Official derivation rules not available"},
-    {"field": "KRI RAS 9 source comparison grain", "status": "TO_VALIDATE", "reason": "The CSV source value grain must be confirmed before replacing per-finding mismatch comparison"},
+    {"field": "hostname exact regex", "status": "TO_VALIDATE", "reason": "Exact validation policy is not available"},
+    {"field": "CVE exact validation policy", "status": "TO_VALIDATE", "reason": "Final CVE validation policy is not available"},
+    {"field": "application enrichment precedence", "status": "TO_VALIDATE", "reason": "Authoritative CIB APM source is not available"},
 ]
 
 
@@ -162,6 +160,8 @@ def render_analysis_markdown(report: dict[str, Any]) -> str:
 | Aggregate percentage | {kri['aggregate']['percentage'] if kri['aggregate']['percentage'] is not None else 'N/A'} |
 | Aggregate numerator | {kri['aggregate']['servers_with_overdue_critical_or_very_high']} |
 | Aggregate denominator | {kri['aggregate']['eligible_sensitive_authenticated_servers']} |
+| Business target | < {kri['aggregate']['target_percentage']}% |
+| Business target met | {kri['aggregate']['business_target_met'] if kri['aggregate']['business_target_met'] is not None else 'NOT_COMPUTABLE'} |
 
 ## Application enrichment
 

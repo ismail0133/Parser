@@ -132,6 +132,10 @@ def categorize_kri_ras9(percentage: float) -> str | None:
     return None
 
 
+def is_kri_business_target_met(percentage: float | None) -> bool | None:
+    return percentage < 30 if percentage is not None else None
+
+
 def calculate_global_kri_ras9(findings: list[Any]) -> dict[str, Any]:
     eligible_servers = {
         finding.hostname
@@ -157,10 +161,12 @@ def calculate_global_kri_ras9(findings: list[Any]) -> dict[str, Any]:
         percentage = round(100 * len(numerator_servers) / denominator, 4)
         status = "COMPUTED"
     return {
-        "grain": "DISTINCT_HOSTNAME",
+        "grain": "SERVER / DISTINCT_HOSTNAME",
         "eligible_sensitive_authenticated_servers": denominator,
         "servers_with_overdue_critical_or_very_high": len(numerator_servers),
         "percentage": percentage,
         "category": categorize_kri_ras9(percentage) if percentage is not None else None,
+        "target_percentage": 30,
+        "business_target_met": is_kri_business_target_met(percentage),
         "status": status,
     }

@@ -29,13 +29,14 @@ class CveDetail(BaseModel):
 
 class RemediationStrategy(BaseModel):
     description: str | None = None
-    strategy_type: str | None = None  # TO_VALIDATE: official derivation rules missing.
+    strategy_type: str | None = None  # Responsibility: ANALYST.
     ownership_main: str | None = None
 
 
 class Finding(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    unique_id: str | None = None
     as_of_date: date | None = None
     remediation_id: str | None = None
     hostname: str | None = None
@@ -55,7 +56,7 @@ class Finding(BaseModel):
     business_line: str | None = None
     severity_level: str | None = None
     proposed_action: str | None = None
-    ownership: str | None = None  # Proposed Owner target/rule remains TO_VALIDATE.
+    ownership: str | None = None  # RAW Proposed Owner; automatic APS/ADM routing is deferred to V2.
     remediation_strategy: RemediationStrategy
     false_positive: bool = False
     false_positive_to_confirm: bool = False

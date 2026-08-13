@@ -33,6 +33,7 @@ def map_direct_fields(row: dict[str, Any]) -> dict[str, Any]:
         "business_line": normalize_string(row.get("IT Sub Cluster")),
         "severity_level": normalize_string(row.get("SEVERITY_LEVEL")),
         "proposed_action": normalize_string(row.get("PROPOSED_ACTION")),
+        "proposed_owner": normalize_string(row.get("Proposed Owner")),
         "action_plan": action_plan,
         "false_positive": false_positive,
         "false_positive_to_confirm": false_positive_to_confirm,

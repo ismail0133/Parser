@@ -74,6 +74,7 @@ def write_outputs(
         anomalies_artifact=names["anomalies"],
         analysis_report_artifact=names["analysis_json"],
         open_points=OPEN_POINTS,
+        kri_ras9=stats["kri_ras9"],
         duration_seconds=stats["duration_seconds"],
     )
     with (destination / names["parser_result"]).open("w", encoding="utf-8") as stream:
@@ -102,6 +103,8 @@ def main() -> int:
     print(f"Duration         : {stats['duration_seconds']:.3f}s")
     print(f"Parser status    : {status}")
     print(f"App enrichment   : {stats['application_enrichment']['status']}")
+    print(f"KRI percentage   : {stats['kri_ras9']['aggregate']['percentage']}")
+    print(f"KRI target <30%  : {stats['kri_ras9']['aggregate']['business_target_met']}")
     print("Artifacts        :")
     for path in artifacts.values():
         print(f"  - {path}")

@@ -2,7 +2,9 @@ from copy import deepcopy
 
 import pytest
 
-from src.calculations.finding_calculations import calculate_global_kri_ras9, categorize_kri_ras9
+from src.calculations.finding_calculations import (
+    calculate_global_kri_ras9, categorize_kri_ras9, is_kri_business_target_met,
+)
 from src.models import Finding
 from src.parser import parse_findings
 from tests.conftest import synthetic_row
@@ -82,3 +84,19 @@ def test_no_eligible_server_is_not_computable(csv_factory):
 )
 def test_kri_categories(percentage, category):
     assert categorize_kri_ras9(percentage) == category
+
+
+@pytest.mark.parametrize(
+    ("percentage", "expected"),
+    [(29.99, True), (30.0, False), (40.0, False)],
+)
+def test_kri_business_target_is_strictly_below_30(percentage, expected):
+    assert is_kri_business_target_met(percentage) is expected
+
+
+def test_zero_denominator_has_no_business_target_result(csv_factory):
+    finding = _finding(csv_factory, server__sensitive=False)
+    result = calculate_global_kri_ras9([finding])
+    assert result["status"] == "NOT_COMPUTABLE"
+    assert result["percentage"] is None
+    assert result["business_target_met"] is None

@@ -1,14 +1,22 @@
-"""Generate a technical analysis of KRI_MISMATCH anomalies without changing data."""
+"""Generate the KRI RAS 9 server-level control report without changing data."""
 
 import argparse
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
-from src.calculations.finding_calculations import calculate_kri_ras9, parse_source_kri
+from src.calculations.finding_calculations import calculate_global_kri_ras9, parse_source_kri
 from src.cleaning.finding_cleaner import clean_findings
 from src.loaders.finding_loader import load_findings
+from src.models.finding import Finding
+
+
+SERVER_KRI_WARNING_TYPES = {
+    "KRI_SERVER_MISMATCH",
+    "KRI_SOURCE_SERVER_INCONSISTENT",
+    "KRI_SOURCE_SERVER_UNINTERPRETABLE",
+}
 
 
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -16,128 +24,106 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
         return [json.loads(line) for line in stream if line.strip()]
 
 
-def _extract_kri_mismatches(payload: Any) -> tuple[list[dict[str, Any]], str]:
+def _load_anomalies(path: Path) -> list[dict[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
     anomalies = payload.get("anomalies", payload) if isinstance(payload, dict) else payload
     if not isinstance(anomalies, list):
         raise RuntimeError("The anomalies artifact must be a JSON list or contain an 'anomalies' list")
-    identification_keys = ("error_type", "type", "anomaly_type", "code")
-    matching_key = next(
-        (key for key in identification_keys if any(item.get(key) == "KRI_MISMATCH" for item in anomalies)),
-        None,
-    )
-    if matching_key is None:
-        available = sorted({key for item in anomalies if isinstance(item, dict) for key in item})
-        raise RuntimeError(
-            "No KRI_MISMATCH found with a supported identification key. "
-            f"Available keys: {available}"
-        )
-    return [item for item in anomalies if item.get(matching_key) == "KRI_MISMATCH"], matching_key
-
-
-def _classify(source: bool | None, calculated: dict[str, Any]) -> tuple[str, str]:
-    if calculated["status"] != "COMPUTED":
-        return "MISSING_REQUIRED_CONTEXT", "The individual KRI condition is not computable"
-    if source is None:
-        return "DATA_NORMALIZATION_ISSUE", "The source KRI is not an unambiguous boolean value"
-    return (
-        "GRAIN_MISMATCH",
-        "The source KRI may represent an aggregate/server-level value while the current warning compares it to an individual finding condition",
-    )
+    return anomalies
 
 
 def analyze(raw_path: Path, findings_path: Path, anomalies_path: Path, output_dir: Path) -> dict[str, Any]:
     raw = clean_findings(load_findings(raw_path)).to_dict(orient="records")
-    findings = _load_jsonl(findings_path)
-    anomalies = json.loads(anomalies_path.read_text(encoding="utf-8"))
+    finding_dicts = _load_jsonl(findings_path)
+    findings = [Finding.model_validate(item) for item in finding_dicts]
+    anomalies = _load_anomalies(anomalies_path)
     if len(raw) != len(findings):
         raise RuntimeError(f"RAW/findings count mismatch: {len(raw)} != {len(findings)}")
-    mismatches, identification_key = _extract_kri_mismatches(anomalies)
-    cases = []
-    for anomaly in mismatches:
-        row_index = int(anomaly["row_index"])
-        source_row = raw[row_index - 1]
-        finding = findings[row_index - 1]
-        server = finding.get("server") or {}
-        calculated = calculate_kri_ras9(
-            hostname=finding.get("hostname"),
-            server_sensitive=bool(server.get("sensitive")),
-            severity_level=finding.get("severity_level"),
-            overdue=finding.get("overdue"),
-            false_positive=bool(finding.get("false_positive")),
-        )
-        source = parse_source_kri(source_row.get("KRI RAS 9"))
-        category, reason = _classify(source, calculated)
-        cases.append({
-            "row_index": row_index,
-            "remediation_id": finding.get("remediation_id"),
-            "hostname": finding.get("hostname"),
-            "cve": finding.get("cve"),
-            "severity": finding.get("severity_level"),
-            "environment": server.get("environment"),
-            "server_sensitive": server.get("sensitive"),
-            "authenticated_scan": True,
-            "age": finding.get("age"),
-            "sla": finding.get("sla"),
-            "overdue": finding.get("overdue"),
-            "false_positive": finding.get("false_positive"),
-            "source_kri": source,
-            "source_kri_raw": source_row.get("KRI RAS 9"),
-            "calculated_kri": calculated.get("result"),
-            "calculation_status": calculated.get("status"),
-            "category": category,
-            "reason": reason,
-        })
-    distribution = Counter(item["category"] for item in cases)
+
+    raw_by_hostname: dict[str, list[Any]] = defaultdict(list)
+    for source_row, finding in zip(raw, findings):
+        if finding.hostname:
+            raw_by_hostname[finding.hostname].append(source_row.get("KRI RAS 9"))
+
+    source_servers_checked = 0
+    source_inconsistencies = 0
+    source_uninterpretable = 0
+    source_cases = []
+    for hostname, values in raw_by_hostname.items():
+        present = [value for value in values if value is not None]
+        if not present:
+            continue
+        source_servers_checked += 1
+        parsed = {parse_source_kri(value) for value in present}
+        if None in parsed:
+            category = "SOURCE_UNINTERPRETABLE"
+            source_uninterpretable += 1
+        elif len(parsed) > 1:
+            category = "SOURCE_INCONSISTENT"
+            source_inconsistencies += 1
+        else:
+            category = "SOURCE_CONSISTENT"
+        source_cases.append({"hostname": hostname, "values_found": present, "category": category})
+
+    warning_counts = Counter(
+        item.get("error_type") for item in anomalies
+        if item.get("error_type") in SERVER_KRI_WARNING_TYPES
+    )
+    aggregate = calculate_global_kri_ras9(findings)
     report = {
-        "total_kri_mismatches": len(cases),
-        "identification_key": identification_key,
-        "distribution_by_cause": dict(distribution),
-        "actually_correctable": sum(item["category"] in {"CALCULATION_RULE_ISSUE", "DATA_NORMALIZATION_ISSUE"} for item in cases),
-        "legitimately_kept_as_warning": sum(item["category"] in {"SOURCE_VALUE_DIFFERS", "GRAIN_MISMATCH"} for item in cases),
-        "requiring_business_validation": sum(item["category"] in {"GRAIN_MISMATCH", "BUSINESS_RULE_TO_VALIDATE"} for item in cases),
-        "cases": cases,
+        "title": "KRI RAS 9 Analysis",
+        "grain": aggregate["grain"],
+        "eligible_servers": aggregate["eligible_sensitive_authenticated_servers"],
+        "numerator_servers": aggregate["servers_with_overdue_critical_or_very_high"],
+        "kri_percentage": aggregate["percentage"],
+        "classification": aggregate["category"],
+        "business_target": "< 30%",
+        "business_target_met": aggregate["business_target_met"],
+        "status": aggregate["status"],
+        "source_kri_servers_checked": source_servers_checked,
+        "source_inconsistencies": source_inconsistencies,
+        "source_uninterpretable": source_uninterpretable,
+        "server_level_mismatches": warning_counts["KRI_SERVER_MISMATCH"],
+        "automatically_correctable": 0,
+        "warnings": sum(warning_counts.values()),
+        "warning_distribution": dict(warning_counts),
+        "source_cases": source_cases,
     }
     output_dir.mkdir(parents=True, exist_ok=True)
-    json_report_path = output_dir / "PARSER-KRI_Mismatch_Analysis.json"
-    markdown_report_path = output_dir / "PARSER-KRI_Mismatch_Analysis.md"
-    json_report_path.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+    json_path = output_dir / "PARSER-KRI_Mismatch_Analysis.json"
+    markdown_path = output_dir / "PARSER-KRI_Mismatch_Analysis.md"
+    json_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    target = (
+        "YES" if report["business_target_met"] is True
+        else "NO" if report["business_target_met"] is False
+        else "NOT_COMPUTABLE"
     )
-    rows = "\n".join(
-        f"| {item['row_index']} | {item['remediation_id'] or ''} | {item['hostname'] or ''} | {item['source_kri']} | {item['calculated_kri']} | {item['category']} |"
-        for item in cases
-    ) or "| — | — | — | — | — | No KRI mismatch |"
-    markdown = f"""# Parser KRI Mismatch Analysis
-
-## Summary
+    markdown = f"""# KRI RAS 9 Analysis
 
 | Metric | Value |
 |---|---:|
-| Total KRI mismatches | {report['total_kri_mismatches']} |
-| Identification key | `{report['identification_key']}` |
-| Actually correctable | {report['actually_correctable']} |
-| Legitimately kept as warning | {report['legitimately_kept_as_warning']} |
-| Requiring business validation | {report['requiring_business_validation']} |
+| Grain | {report['grain']} |
+| Eligible servers | {report['eligible_servers']} |
+| Numerator servers | {report['numerator_servers']} |
+| KRI percentage | {report['kri_percentage'] if report['kri_percentage'] is not None else 'NOT_COMPUTABLE'} |
+| Business target | < 30% |
+| Business target met | {target} |
+| Source KRI servers checked | {report['source_kri_servers_checked']} |
+| Source inconsistencies | {report['source_inconsistencies']} |
+| Source uninterpretable | {report['source_uninterpretable']} |
+| Server-level mismatches | {report['server_level_mismatches']} |
+| Automatically correctable | 0 |
+| Warnings | {report['warnings']} |
 
-## Distribution by cause
+## Warning distribution
 
 ```json
-{json.dumps(report['distribution_by_cause'], ensure_ascii=False, indent=2)}
+{json.dumps(report['warning_distribution'], ensure_ascii=False, indent=2)}
 ```
-
-## Cases
-
-| RAW row | Remediation ID | Hostname | Source KRI | Calculated finding KRI | Category |
-|---:|---|---|---:|---:|---|
-{rows}
 """
-    markdown_report_path.write_text(markdown, encoding="utf-8")
-    if not json_report_path.is_file() or json_report_path.stat().st_size == 0:
-        raise RuntimeError(f"JSON report was not written: {json_report_path}")
-    if not markdown_report_path.is_file() or markdown_report_path.stat().st_size == 0:
-        raise RuntimeError(f"Markdown report was not written: {markdown_report_path}")
-    report["json_report"] = str(json_report_path.resolve())
-    report["markdown_report"] = str(markdown_report_path.resolve())
+    markdown_path.write_text(markdown, encoding="utf-8")
+    report["json_report"] = str(json_path.resolve())
+    report["markdown_report"] = str(markdown_path.resolve())
     return report
 
 
@@ -149,14 +135,15 @@ def main() -> int:
     cli.add_argument("--output-dir", default="output")
     args = cli.parse_args()
     report = analyze(Path(args.raw), Path(args.findings), Path(args.anomalies), Path(args.output_dir))
-    print(f"Total KRI mismatches: {report['total_kri_mismatches']}")
-    print(f"Identification key: {report['identification_key']}")
-    print(f"Répartition par catégorie: {report['distribution_by_cause']}")
+    print(f"Grain: {report['grain']}")
+    print(f"Eligible servers: {report['eligible_servers']}")
+    print(f"Numerator servers: {report['numerator_servers']}")
+    print(f"KRI percentage: {report['kri_percentage']}")
+    print(f"Business target met: {report['business_target_met']}")
+    print(f"Server-level mismatches: {report['server_level_mismatches']}")
+    print(f"Source inconsistencies: {report['source_inconsistencies']}")
     print(f"JSON report: {report['json_report']}")
     print(f"Markdown report: {report['markdown_report']}")
-    print(f"Nombre réellement corrigeables    : {report['actually_correctable']}")
-    print(f"Nombre conservés en warning       : {report['legitimately_kept_as_warning']}")
-    print(f"Nombre nécessitant validation     : {report['requiring_business_validation']}")
     return 0
 
 

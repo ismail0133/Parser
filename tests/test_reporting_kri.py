@@ -69,14 +69,15 @@ def test_kri_computable_and_not_computable():
     assert set(missing["missing_fields"]) == {"hostname", "severity_level", "overdue"}
 
 
-def test_kri_source_mismatch_and_open_points(csv_factory):
+def test_kri_server_mismatch_and_validated_points_removed(csv_factory):
     row = synthetic_row(AGE="999", **{"KRI RAS 9": "false"})
     findings, anomalies, stats = parse_findings(csv_factory([row]))
-    assert any(item.error_type == "KRI_MISMATCH" for item in anomalies)
+    assert any(item.error_type == "KRI_SERVER_MISMATCH" for item in anomalies)
+    assert not any(item.error_type == "KRI_MISMATCH" for item in anomalies)
     report = build_analysis_report(findings, anomalies, stats, timestamp="x", input_filename="f.csv", artifacts=[])
     assert report["kri_ras9"]["status"] == "COMPUTED"
     assert report["kri_ras9"]["qualifying_findings"] == 1
     fields = {item["field"] for item in report["open_points"]}
-    assert {"unique_id", "remediation_id", "Proposed Owner", "remediation_strategy.strategy_type"} <= fields
+    assert not ({"unique_id", "remediation_id", "Proposed Owner", "remediation_strategy.strategy_type"} & fields)
     markdown = render_analysis_markdown(report)
     assert "OPEN POINTS / TO_VALIDATE" in markdown

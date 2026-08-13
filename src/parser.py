@@ -174,6 +174,7 @@ def _parse_row(row_index: int, row: dict[str, Any], application_lookup: Applicat
                                   "ERROR", "UNKNOWN_PRIORITY", "Priority must be PR1, PR2, PR3 or PR4"))
 
     payload: dict[str, Any] = {
+        "unique_id": direct["cve"],
         "as_of_date": as_of_date,
         "remediation_id": rem_id,
         "hostname": direct["hostname"],
@@ -193,7 +194,7 @@ def _parse_row(row_index: int, row: dict[str, Any], application_lookup: Applicat
         "business_line": direct["business_line"],
         "severity_level": direct["severity_level"],
         "proposed_action": direct["proposed_action"],
-        "ownership": None,
+        "ownership": direct["proposed_owner"],
         "remediation_strategy": {"description": direct["action_plan"], "strategy_type": None,
                                  "ownership_main": None},
         "false_positive": direct["false_positive"],
@@ -225,8 +226,11 @@ def _parse_row(row_index: int, row: dict[str, Any], application_lookup: Applicat
         anomalies.append(_anomaly(row_index, rem_id, "ETA", row.get("ETA"), "ERROR",
                                   "INVALID_DATE", "eta cannot be parsed"))
     if rem_id is None:
-        anomalies.append(_anomaly(row_index, rem_id, "REM_KEY_ID", None, "ERROR",
-                                  "TO_VALIDATE_REMEDIATION_ID", "remediation_id fallback formula is unavailable"))
+        anomalies.append(_anomaly(
+            row_index, rem_id, "REM_KEY_ID", None, "WARNING",
+            "MISSING_REMEDIATION_ID",
+            "REM_KEY_ID absent. Verify whether the finding was removed, corrected, or the identifier is unavailable in the source.",
+        ))
     for field, error_type, message in validate_finding_payload(payload):
         anomalies.append(_anomaly(row_index, rem_id, field, row.get(field), "ERROR", error_type, message))
     finding = Finding.model_validate(payload)
@@ -237,19 +241,86 @@ def _parse_row(row_index: int, row: dict[str, Any], application_lookup: Applicat
         overdue=finding.overdue,
         false_positive=finding.false_positive,
     )
-    source_kri = parse_source_kri(row.get("KRI RAS 9"))
     if kri["status"] == "NOT_COMPUTABLE":
         anomalies.append(_anomaly(
             row_index, rem_id, "KRI RAS 9", row.get("KRI RAS 9"), "WARNING",
             "KRI_NOT_COMPUTABLE",
             "KRI RAS 9 cannot be computed; missing: " + ", ".join(kri["missing_fields"]),
         ))
-    elif source_kri is not None and source_kri != kri["result"]:
-        anomalies.append(_anomaly(
-            row_index, rem_id, "KRI RAS 9", row.get("KRI RAS 9"), "WARNING",
-            "KRI_MISMATCH", "Source KRI differs from calculated KRI",
-        ))
     return finding, anomalies, kri
+
+
+def _validate_server_kri_sources(
+    frame: pd.DataFrame, findings: list[Finding], parsed_row_positions: list[int]
+) -> tuple[list[Anomaly], dict[str, Any]]:
+    server_rows: dict[str, list[tuple[int, Any, Finding]]] = {}
+    for finding, row_index in zip(findings, parsed_row_positions):
+        row = frame.iloc[row_index - 1]
+        if finding.hostname:
+            server_rows.setdefault(finding.hostname, []).append(
+                (row_index, row.get("KRI RAS 9"), finding)
+            )
+
+    anomalies: list[Anomaly] = []
+    servers_checked = 0
+    inconsistencies = 0
+    mismatches = 0
+    uninterpretable = 0
+    for hostname, rows in server_rows.items():
+        raw_values = [value for _, value, _ in rows if normalize_string(value) is not None]
+        parsed_values = {parse_source_kri(value) for value in raw_values}
+        interpreted_values = {value for value in parsed_values if value is not None}
+        first_row, _, first_finding = rows[0]
+        if raw_values:
+            servers_checked += 1
+        if None in parsed_values:
+            uninterpretable += 1
+            anomalies.append(_anomaly(
+                first_row, first_finding.remediation_id, "KRI RAS 9", raw_values,
+                "WARNING", "KRI_SOURCE_SERVER_UNINTERPRETABLE",
+                f"Server {hostname} has a source KRI value that cannot be interpreted.",
+            ))
+            continue
+        if len(interpreted_values) > 1:
+            inconsistencies += 1
+            anomalies.append(_anomaly(
+                first_row, first_finding.remediation_id, "KRI RAS 9",
+                {"hostname": hostname, "values_found": raw_values, "number_of_findings": len(rows)},
+                "WARNING", "KRI_SOURCE_SERVER_INCONSISTENT",
+                f"Server {hostname} has contradictory source KRI values across {len(rows)} findings.",
+            ))
+            continue
+        if not interpreted_values:
+            continue
+        server_eligible = any(
+            finding.server.sensitive is True and finding.server.authenticated_scan is True
+            for _, _, finding in rows
+        )
+        server_result = bool(server_eligible and any(
+            finding.server.sensitive is True
+            and finding.server.authenticated_scan is True
+            and finding.severity_level
+            and finding.severity_level.casefold() in {"critical", "very high"}
+            and finding.overdue is True
+            and finding.false_positive is not True
+            for _, _, finding in rows
+        ))
+        source_result = next(iter(interpreted_values))
+        if source_result != server_result:
+            mismatches += 1
+            anomalies.append(_anomaly(
+                first_row, first_finding.remediation_id, "KRI RAS 9",
+                {"hostname": hostname, "source": source_result, "calculated": server_result},
+                "WARNING", "KRI_SERVER_MISMATCH",
+                f"Source KRI for server {hostname} differs from the calculated server-level KRI.",
+            ))
+    return anomalies, {
+        "source_kri_servers_checked": servers_checked,
+        "source_inconsistencies": inconsistencies,
+        "server_level_mismatches": mismatches,
+        "source_uninterpretable": uninterpretable,
+        "automatically_correctable": 0,
+    }
 
 
 def parse_findings(path: str | Path, application_lookup: ApplicationLookup | None = None,
@@ -259,12 +330,14 @@ def parse_findings(path: str | Path, application_lookup: ApplicationLookup | Non
     findings: list[Finding] = []
     anomalies: list[Anomaly] = []
     kri_evaluations: list[dict[str, Any]] = []
+    parsed_row_positions: list[int] = []
     rows_with_warnings: set[int] = set()
     rows_with_errors: set[int] = set()
     for position, (_, series) in enumerate(frame.iterrows(), start=1):
         try:
             finding, row_anomalies, kri = _parse_row(position, series.to_dict(), application_lookup, date.today())
             findings.append(finding)
+            parsed_row_positions.append(position)
             kri_evaluations.append(kri)
             anomalies.extend(row_anomalies)
             if any(item.severity == "WARNING" for item in row_anomalies):
@@ -275,6 +348,11 @@ def parse_findings(path: str | Path, application_lookup: ApplicationLookup | Non
             anomalies.append(_anomaly(position, normalize_string(series.get("REM_KEY_ID")), "row", None,
                                       "ERROR", "ROW_BUILD_ERROR", str(exc)))
             rows_with_errors.add(position)
+    server_kri_anomalies, server_kri_control = _validate_server_kri_sources(
+        frame, findings, parsed_row_positions
+    )
+    anomalies.extend(server_kri_anomalies)
+    rows_with_warnings.update(item.row_index for item in server_kri_anomalies)
     counts = {severity: sum(item.severity == severity for item in anomalies)
               for severity in ("INFO", "WARNING", "ERROR")}
     stats = {
@@ -310,4 +388,5 @@ def parse_findings(path: str | Path, application_lookup: ApplicationLookup | Non
         },
     }
     stats["kri_ras9"]["aggregate"] = calculate_global_kri_ras9(findings)
+    stats["kri_ras9"]["server_source_control"] = server_kri_control
     return findings, anomalies, stats

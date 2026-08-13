@@ -25,6 +25,9 @@ def _parser_result(**overrides):
         "anomalies_artifact": "anomalies.json",
         "analysis_report_artifact": "analysis.json",
         "open_points": OPEN_POINTS,
+        "kri_ras9": {"aggregate": {
+            "percentage": 0.0, "business_target_met": True,
+        }},
         "duration_seconds": 0.1,
     }
     values.update(overrides)
@@ -68,10 +71,12 @@ def test_agent_success_with_warnings(tmp_path):
 def test_kri_warning_is_analyzed_without_agent_retry(tmp_path):
     calls = {"parser": 0, "kri": 0}
     analysis = {
-        "total_kri_mismatches": 50,
-        "distribution_by_cause": {"GRAIN_MISMATCH": 50},
+        "server_level_mismatches": 50,
+        "warning_distribution": {"KRI_SERVER_MISMATCH": 50},
+        "classification": "SATISFACTORY",
         "actually_correctable": 0,
-        "requiring_business_validation": 50,
+        "kri_percentage": 20.0,
+        "business_target_met": True,
     }
     result, calls = _run_with_result(
         tmp_path,
@@ -82,7 +87,7 @@ def test_kri_warning_is_analyzed_without_agent_retry(tmp_path):
     assert calls == {"parser": 1, "kri": 1}
     assert result.parser.retry_count == 0
     assert result.kri.mismatches == 50
-    assert result.kri.classification == "GRAIN_MISMATCH"
+    assert result.kri.classification == "SATISFACTORY"
     assert result.next_action == "CONTINUE"
 
 
@@ -128,10 +133,11 @@ def test_missing_input_returns_clean_failure(tmp_path):
 def test_open_points_are_transmitted_without_failure(tmp_path):
     result, _ = _run_with_result(tmp_path, _parser_result())
     assert result.requires_business_validation is True
-    assert {
-        "unique_id", "remediation_id", "Proposed Owner",
-        "remediation_strategy.strategy_type", "KRI RAS 9 source comparison grain",
-    } <= set(result.open_points)
+    assert "unique_id" not in result.open_points
+    assert "remediation_id" not in result.open_points
+    assert "Proposed Owner" not in result.open_points
+    assert "remediation_strategy.strategy_type" not in result.open_points
+    assert "KRI RAS 9 source comparison grain" not in result.open_points
     assert result.status == "SUCCESS"
 
 
@@ -144,7 +150,7 @@ def test_agent_runs_real_parser_v1_and_writes_artifacts(csv_factory, tmp_path):
     assert result.parser.output_findings == 1
     assert result.parser.retry_count == 0
     assert result.kri.mismatches == 1
-    assert result.kri.classification == "GRAIN_MISMATCH"
+    assert result.kri.classification == "PERFECT"
     assert result.next_action == "CONTINUE"
     agent_results = list(output.glob("PARSER-Agent_Result-*.json"))
     agent_reports = list(output.glob("PARSER-Agent_Report-*.md"))

@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from analyze_kri_mismatches import analyze
+from analyze_kri_mismatches import SERVER_KRI_WARNING_TYPES, analyze
 from main import write_outputs
 from src.models.parser_result import ParserResult
 from src.parser import parse_findings
@@ -26,10 +26,10 @@ def run_parser(input_file: str, output_dir: str = "output") -> dict[str, Any]:
 def analyze_parser_kri_warnings(
     input_file: str, artifacts: dict[str, str], output_dir: str
 ) -> dict[str, Any] | None:
-    """Run the existing KRI analysis only when KRI_MISMATCH warnings exist."""
+    """Run the KRI server analysis when a server-level KRI warning exists."""
     anomalies_path = Path(artifacts["anomalies"])
     anomalies = json.loads(anomalies_path.read_text(encoding="utf-8"))
-    if not any(item.get("error_type") == "KRI_MISMATCH" for item in anomalies):
+    if not any(item.get("error_type") in SERVER_KRI_WARNING_TYPES for item in anomalies):
         return None
     return analyze(
         Path(input_file),
