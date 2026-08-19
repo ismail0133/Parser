@@ -86,9 +86,9 @@ def test_conflicting_fields_become_none_and_are_all_reported():
     assert stats["applications_with_conflicts"] == 1
 
 
-def test_invalid_auid_is_excluded():
+def test_nonempty_auid_with_unconfirmed_format_is_kept_and_reported():
     applications, anomalies, stats = parse_applications(frame(synthetic_row(AUID="not-an-auid")))
-    assert applications == []
+    assert [application.auid for application in applications] == ["NOT-AN-AUID"]
     assert stats["invalid_auid_rows"] == 1
     assert anomalies[0].error_type == "INVALID_AUID"
 

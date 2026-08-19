@@ -59,7 +59,6 @@ def parse_applications(
             anomalies.append(ApplicationAnomaly(
                 error_type="INVALID_AUID", row_index=position, field="auid", values=[normalized],
             ))
-            continue
         rows_by_auid.setdefault(auid, []).append(position - 1)
 
     applications: list[ObjApplication] = []

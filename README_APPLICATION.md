@@ -30,9 +30,10 @@ propriété, une valeur non vide unique est conservée. Plusieurs valeurs distin
 produisent `APPLICATION_CONFLICT` et la propriété canonique reste `None` : aucune
 première/dernière valeur, mode ou valeur majoritaire n'est sélectionné.
 
-Une ligne sans AUID produit `MISSING_AUID`. Un AUID ne respectant pas la politique
-existante produit `INVALID_AUID`. Ces lignes sont exclues du référentiel et
-`CODE_APP` n'est pas utilisé comme fallback.
+Une ligne sans AUID produit `MISSING_AUID` et reste exclue. Un AUID non vide ne
+respectant pas la politique de format existante produit `INVALID_AUID`, mais est
+conservé dans le référentiel afin de ne pas perdre une Application réellement
+présente dans le RAW. `CODE_APP` n'est jamais utilisé comme fallback.
 
 ## Exécution complète
 
