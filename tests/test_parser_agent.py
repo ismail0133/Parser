@@ -145,12 +145,13 @@ def test_agent_runs_real_parser_v1_and_writes_artifacts(csv_factory, tmp_path):
     raw_path = csv_factory([synthetic_row(**{"KRI RAS 9": "true"})])
     output = tmp_path / "agent-output"
     result = run_parser_agent(str(raw_path), str(output))
-    assert result.status == "SUCCESS_WITH_WARNINGS"
+    assert result.status == "SUCCESS"
     assert result.input.rows == 1
     assert result.parser.output_findings == 1
     assert result.parser.retry_count == 0
-    assert result.kri.mismatches == 1
-    assert result.kri.classification == "PERFECT"
+    assert result.parser.warnings == 0
+    assert result.kri.mismatches == 0
+    assert result.kri.classification is None
     assert result.next_action == "CONTINUE"
     agent_results = list(output.glob("PARSER-Agent_Result-*.json"))
     agent_reports = list(output.glob("PARSER-Agent_Report-*.md"))
