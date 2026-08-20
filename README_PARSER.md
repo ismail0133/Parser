@@ -430,3 +430,23 @@ Le Parser Agent produit notamment :
 - `PARSER-Agent_Report-<timestamp>.md` pour une lecture humaine ;
 - les artefacts habituels du Parser V1 ;
 - les rapports `PARSER-KRI_Mismatch_Analysis.*` lorsqu'un warning KRI serveur est présent.
+
+Test-Path "data\finding_list_fixed.csv"
+Le résultat attendu est :
+True
+Lance ensuite le Parser Agent :
+python parser_agent_main.py --input "data/finding_list_fixed.csv"
+Avec un répertoire de sortie explicite :
+python parser_agent_main.py `
+  --input "data/finding_list_fixed.csv" `
+  --output-dir "output"
+5. Vérifier les artefacts
+Get-ChildItem .\output
+Afficher le dernier résultat Agent :
+Get-Content (Get-ChildItem .\output\PARSER-Agent_Result-*.json |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1).FullName
+Afficher le dernier rapport Markdown :
+Get-Content (Get-ChildItem .\output\PARSER-Agent_Report-*.md |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1).FullName
