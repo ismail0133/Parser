@@ -5,6 +5,14 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Mapping
 
+from src.cleaning.finding_cleaner import normalize_string
+
+
+APPLICATION_FIELDS = (
+    "auid", "code_app", "trigram", "application_name", "appsec", "business_line",
+    "production_domain_manager", "production_manager",
+)
+
 
 def _object(value: Any, field: str) -> dict[str, Any]:
     if value is None:
@@ -12,6 +20,19 @@ def _object(value: Any, field: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{field} must be a JSON object")
     return value
+
+
+def map_obj_application(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Map one canonical obj_application without deriving or dropping fields."""
+    if not isinstance(payload, Mapping):
+        raise ValueError("obj_application must be a JSON object")
+    auid = normalize_string(payload.get("auid"))
+    if auid is None:
+        raise ValueError("obj_application.auid is required")
+    return {
+        field: auid.upper() if field == "auid" else payload.get(field)
+        for field in APPLICATION_FIELDS
+    }
 
 
 def map_obj_finding(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -52,24 +73,6 @@ def map_obj_finding(payload: Mapping[str, Any]) -> dict[str, Any]:
             "cvss_score": None,
         }
 
-    # AUID/trigram alone do not constitute a canonical Application. Source name,
-    # AppSec, vital or CIS data is enough to preserve an available application row,
-    # but missing values remain NULL and are never synthesized.
-    has_application_data = any(application.get(key) is not None for key in (
-        "name", "appsec", "vital", "cis",
-    ))
-    application_row = None
-    if has_application_data:
-        application_row = {
-            "auid": application.get("auid"),
-            "trigram": application.get("trigram"),
-            "application_name": application.get("name"),
-            "appsec": application.get("appsec"),
-            "vital": application.get("vital"),
-            "cis": application.get("cis"),
-            "business_line": source.get("business_line"),
-        }
-
     finding_row = {
         "source_unique_id": source.get("unique_id"),
         "remediation_id": source.get("remediation_id"),
@@ -97,7 +100,6 @@ def map_obj_finding(payload: Mapping[str, Any]) -> dict[str, Any]:
         "source_payload": source,
     }
     return {
-        "application": application_row,
         "server": server_row,
         "vulnerability": vulnerability_row,
         "finding": finding_row,

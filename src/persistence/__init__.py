@@ -1,5 +1,5 @@
 """Offline-ready PostgreSQL persistence layer for Parser findings."""
 
-from src.persistence.finding_mapper import map_obj_finding
+from src.persistence.finding_mapper import map_obj_application, map_obj_finding
 
-__all__ = ["map_obj_finding"]
+__all__ = ["map_obj_application", "map_obj_finding"]

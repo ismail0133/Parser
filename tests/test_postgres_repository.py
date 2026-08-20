@@ -72,23 +72,24 @@ def test_application_is_looked_up_by_confirmed_auid():
     assert insert_params[0] == "AP10426"
 
 
-def mapped_finding():
+def mapped_finding(auid=None):
     return {
-        "application": None,
         "server": {"hostname": "host", "operating_system": None, "os_name": None,
                    "os_version": None, "environment": None, "environment_detail": None,
                    "sensitive": False, "authenticated_scan": True},
         "vulnerability": {"cve_code": "CVE-1", "title": None, "description": None,
                           "severity_level": None, "cvss_score": None},
-        "finding": {"source_payload": {"cve": "CVE-1"}},
+        "finding": {"application_auid": auid, "source_payload": {"cve": "CVE-1"}},
     }
 
 
 def test_transaction_orders_run_before_dimensions_and_commits(tmp_path):
     source = tmp_path / "obj_findings.jsonl"
     source.write_text(json.dumps({"cve": "CVE-1"}) + "\n", encoding="utf-8")
+    applications_source = tmp_path / "obj_applications.jsonl"
+    applications_source.write_text("", encoding="utf-8")
     connection = FakeConnection()
-    load_transaction(connection, [mapped_finding()], source)
+    load_transaction(connection, [], [mapped_finding()], applications_source, source)
     statements = [sql for sql, _ in connection.calls]
     assert statements[0].startswith("INSERT INTO pipeline_run")
     assert next(i for i, sql in enumerate(statements) if "INSERT INTO server" in sql) > 0
@@ -102,8 +103,49 @@ def test_transaction_orders_run_before_dimensions_and_commits(tmp_path):
 def test_transaction_rolls_back_on_error(tmp_path):
     source = tmp_path / "obj_findings.jsonl"
     source.write_text("{}\n", encoding="utf-8")
+    applications_source = tmp_path / "obj_applications.jsonl"
+    applications_source.write_text("", encoding="utf-8")
     connection = FakeConnection(fail_on="INSERT INTO finding")
     with pytest.raises(RuntimeError, match="database failure"):
-        load_transaction(connection, [mapped_finding()], source)
+        load_transaction(connection, [], [mapped_finding()], applications_source, source)
     assert connection.commits == 0
     assert connection.rollbacks == 1
+
+
+def test_transaction_resolves_one_application_for_many_findings(tmp_path):
+    findings_source = tmp_path / "obj_findings_enriched.jsonl"
+    findings_source.write_text("{}\n{}\n", encoding="utf-8")
+    applications_source = tmp_path / "obj_applications.jsonl"
+    applications_source.write_text("{}\n", encoding="utf-8")
+    connection = FakeConnection()
+    application = {"auid": "AP1", "application_name": "App"}
+    load_transaction(connection, [application], [mapped_finding("AP1"), mapped_finding("AP1")],
+                     applications_source, findings_source)
+    statements = [sql for sql, _ in connection.calls]
+    assert sum("INSERT INTO application" in sql for sql in statements) == 1
+    finding_params = [params for sql, params in connection.calls if "INSERT INTO finding" in sql]
+    assert len(finding_params) == 2
+    assert all(params[1] is not None for params in finding_params)
+
+
+def test_transaction_accepts_null_application_id(tmp_path):
+    findings_source = tmp_path / "obj_findings_enriched.jsonl"
+    findings_source.write_text("{}\n", encoding="utf-8")
+    applications_source = tmp_path / "obj_applications.jsonl"
+    applications_source.write_text("", encoding="utf-8")
+    connection = FakeConnection()
+    load_transaction(connection, [], [mapped_finding()], applications_source, findings_source)
+    params = next(params for sql, params in connection.calls if "INSERT INTO finding" in sql)
+    assert params[1] is None
+
+
+def test_transaction_persists_unresolved_auid_anomaly(tmp_path):
+    findings_source = tmp_path / "obj_findings_enriched.jsonl"
+    findings_source.write_text("{}\n", encoding="utf-8")
+    applications_source = tmp_path / "obj_applications.jsonl"
+    applications_source.write_text("", encoding="utf-8")
+    connection = FakeConnection()
+    load_transaction(connection, [], [mapped_finding("AP999")], applications_source, findings_source)
+    anomaly_params = next(params for sql, params in connection.calls if "INSERT INTO anomaly" in sql)
+    assert anomaly_params[4] == "UNRESOLVED_APPLICATION_AUID"
+    assert json.loads(anomaly_params[6]) == {"auid": "AP999"}

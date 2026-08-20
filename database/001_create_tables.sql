@@ -3,6 +3,7 @@ BEGIN;
 CREATE TABLE application (
     application_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     auid TEXT UNIQUE,
+    code_app TEXT,
     trigram TEXT,
     application_name TEXT,
     application_status TEXT,

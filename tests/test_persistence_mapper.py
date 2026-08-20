@@ -1,4 +1,4 @@
-from src.persistence.finding_mapper import map_obj_finding
+from src.persistence.finding_mapper import map_obj_application, map_obj_finding
 
 
 def complete_finding(**overrides):
@@ -27,7 +27,7 @@ def test_maps_complete_finding_and_preserves_source_payload():
     result = map_obj_finding(source)
     assert result["server"]["os_name"] == "RHEL"
     assert result["vulnerability"]["cve_code"] == "CVE-2026-1234"
-    assert result["application"]["application_name"] == "App"
+    assert "application" not in result
     assert result["finding"]["absolute_first_found_date"] == "2026-05-01"
     assert result["finding"]["false_positive"] is False
     assert result["finding"]["strategy_type"] is None
@@ -35,10 +35,32 @@ def test_maps_complete_finding_and_preserves_source_payload():
     assert result["finding"]["source_payload"] is not source
 
 
-def test_application_with_only_auid_is_unresolved():
+def test_application_auid_is_only_a_finding_reference():
     result = map_obj_finding(complete_finding(application={"auid": "AP10426"}))
-    assert result["application"] is None
     assert result["finding"]["application_auid"] == "AP10426"
+
+
+def test_maps_complete_canonical_application():
+    source = {
+        "auid": " ap10426 ", "code_app": "CODE", "trigram": "ABC",
+        "application_name": "App", "appsec": "P4", "business_line": "Retail",
+        "production_domain_manager": "Domain", "production_manager": "Production",
+    }
+    assert map_obj_application(source) == {
+        **source, "auid": "AP10426",
+    }
+
+
+def test_application_business_fields_are_not_duplicated_in_finding_row():
+    result = map_obj_finding(complete_finding())
+    finding = result["finding"]
+    assert finding["business_line"] == "Banking"
+    assert "code_app" not in finding
+    assert "production_domain_manager" not in finding
+    assert "production_manager" not in finding
+    assert "trigram" not in finding
+    assert "application_name" not in finding
+    assert "appsec" not in finding
 
 
 def test_cve_absent_does_not_invent_code():

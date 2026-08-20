@@ -7,7 +7,8 @@ from typing import Any, Mapping, Sequence
 
 
 APPLICATION_COLUMNS = (
-    "auid", "trigram", "application_name", "appsec", "vital", "cis", "business_line",
+    "auid", "code_app", "trigram", "application_name", "appsec", "business_line",
+    "production_domain_manager", "production_manager",
 )
 SERVER_COLUMNS = (
     "hostname", "operating_system", "os_name", "os_version", "environment",
