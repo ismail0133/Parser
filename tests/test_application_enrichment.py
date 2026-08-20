@@ -47,10 +47,18 @@ def test_matched_finding_fills_only_supported_empty_fields():
     assert result["application"] == {
         "auid": "AP100", "trigram": "TRI", "name": "Application", "appsec": "P2",
     }
-    assert result["business_line"] == "Business"
+    assert result["business_line"] is None
     assert "code_app" not in result["application"]
     assert "production_manager" not in result["application"]
     assert anomalies == []
+
+
+def test_business_line_is_never_enriched_or_reported_as_conflict():
+    source = finding(business_line="Finding business line")
+    result, status, anomalies = enrich_finding_payload(source, {"AP100": [application()]})
+    assert result["business_line"] == "Finding business line"
+    assert status == "ENRICHED"
+    assert not [item for item in anomalies if item.get("field") == "business_line"]
 
 
 def test_missing_auid_is_preserved_and_reported_without_anomaly():

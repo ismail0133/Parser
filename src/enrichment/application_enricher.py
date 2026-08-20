@@ -33,8 +33,6 @@ def enrich_with_application(
     for field in ("trigram", "name", "appsec", "vital", "cis"):
         if target.get(field) is None and application.get(field) is not None:
             target[field] = application[field]
-    if finding.get("business_line") is None and application.get("business_line") is not None:
-        finding["business_line"] = application["business_line"]
     return finding, True
 
 
@@ -43,10 +41,9 @@ APPLICATION_FIELD_TARGETS = {
     "trigram": ("application", "trigram"),
     "application_name": ("application", "name"),
     "appsec": ("application", "appsec"),
-    "business_line": (None, "business_line"),
 }
 UNMAPPED_APPLICATION_FIELDS = (
-    "code_app", "production_domain_manager", "production_manager",
+    "code_app", "business_line", "production_domain_manager", "production_manager",
 )
 
 
