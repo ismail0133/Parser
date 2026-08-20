@@ -28,4 +28,4 @@ $errors |
 
 
 
-    python -c "import json,collections; d=json.load(open(r'output\parser_anomalies.json',encoding='utf-8')); e=[x for x in d if x.get('severity')=='ERROR']; g=collections.defaultdict(lambda:{'n':0,'f':set(),'m':set()}); [(g[x.get('error_type','UNKNOWN')]['f'].add(str(x.get('field',''))),g[x.get('error_type','UNKNOWN')]['m'].add(str(x.get('message',''))),g[x.get('error_type','UNKNOWN')].update(n=g[x.get('error_type','UNKNOWN')]['n']+1)) for x in e]; print(*[f'{k}: {v[\"n\"]} occurrences\nChamp(s): {\", \".join(sorted(v[\"f\"]))}\nMessage(s): {\" | \".join(sorted(v[\"m\"]))}' for k,v in sorted(g.items())],sep='\n\n')"
+    python -c 'import json,collections; d=json.load(open(r"output\parser_anomalies.json",encoding="utf-8")); c=collections.Counter((x.get("error_type","UNKNOWN"),x.get("field",""),x.get("message","")) for x in d if x.get("severity")=="ERROR"); print(*["%s : %s occurrences | Champ : %s | Message : %s" % (k[0],n,k[1],k[2]) for k,n in sorted(c.items())],sep="\n")'
