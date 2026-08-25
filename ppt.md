@@ -114,3 +114,29 @@ RAW → Parser → obj_finding + obj_application → Enrichment
 Avec tes résultats :
 35 061 findings • 35 022 enrichis • 100 % match • 0 conflit
 03 — PostgreSQL & Results
+
+
+┌──────────────────────────────────────────────────────────────┐
+│ 02 — DATA PIPELINE & ENRICHMENT                             │
+│ From Raw Findings to Enriched Business Objects              │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│ RAW → PARSER V1 → obj_finding + obj_application → ENRICHED  │
+│                                                              │
+├──────────────────────┬───────────────────────────────────────┤
+│                      │                                       │
+│     PARSER V1        │       APPLICATION ENRICHMENT          │
+│                      │                                       │
+│     35 061           │  35 022   100%    0       39         │
+│     Findings         │  AUID     Match   Unmatch  Missing    │
+│                      │                                       │
+│ • Cleaning           │ Matching Key: AUID                    │
+│ • Normalization      │                                       │
+│ • Validation         │ Application Name • Trigram • AppSec  │
+│ • KRI                │                                       │
+│ • Anomalies          │ DATA QUALITY DECISION                 │
+│ • Reporting          │ Business Lines ≠ IT Sub Cluster      │
+│                      │                                       │
+├──────────────────────┴───────────────────────────────────────┤
+│ 35 022 ENRICHED • 100% MATCH • 0 CONFLICT • 0 FINDING LOST │
+└──────────────────────────────────────────────────────────────┘
