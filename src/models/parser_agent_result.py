@@ -38,6 +38,9 @@ class ParserAgentResult(BaseModel):
     application_enrichment: dict[str, str] = Field(
         default_factory=lambda: {"status": "SKIPPED_NO_SOURCE"}
     )
+    external_application_enrichment: dict[str, Any] = Field(
+        default_factory=lambda: {"status": "NOT_AVAILABLE"}
+    )
     dependencies: dict[str, str] = Field(default_factory=lambda: {
         "cib_apm": "WAITING_FOR_SOURCE",
         "postgresql": "NOT_CONFIGURED",

@@ -17,6 +17,85 @@ def _open_point_names() -> list[str]:
     return [item["field"] for item in OPEN_POINTS]
 
 
+def _load_external_enrichment_report(output_dir: str | Path) -> dict[str, Any]:
+    report_path = Path(output_dir) / "application_enrichment_report.json"
+    if not report_path.is_file():
+        return {"status": "NOT_AVAILABLE"}
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"status": "NOT_AVAILABLE"}
+    return report if isinstance(report, dict) else {"status": "NOT_AVAILABLE"}
+
+
+def render_execution_summary(result: ParserAgentResult) -> str:
+    parser = result.parser
+    enrichment = result.external_application_enrichment
+    enrichment_available = enrichment.get("status") != "NOT_AVAILABLE"
+
+    def value(name: str, default: Any = "NOT_AVAILABLE") -> Any:
+        return enrichment.get(name, default) if enrichment_available else default
+
+    input_equals_output = value("input_equals_output")
+    same_count = (
+        parser is not None
+        and value("total_findings") == parser.output_findings
+        and value("output_findings") == parser.output_findings
+    )
+    if input_equals_output is True and same_count:
+        data_loss = "NO"
+    elif enrichment_available and (input_equals_output is False or not same_count):
+        data_loss = "YES"
+    else:
+        data_loss = "NOT_AVAILABLE"
+    pipeline_output = value(
+        "output_findings", parser.output_findings if parser else "NOT_AVAILABLE"
+    )
+    match_rate = value("match_rate")
+    match_rate_display = f"{match_rate}%" if isinstance(match_rate, (int, float)) else match_rate
+    integrity_display = (
+        "YES" if input_equals_output is True
+        else "NO" if input_equals_output is False
+        else "NOT_AVAILABLE"
+    )
+    postgres_status = result.dependencies.get("postgresql", "NOT_AVAILABLE")
+    return f"""========================================
+PIPELINE EXECUTION SUMMARY
+========================================
+
+PARSER
+------
+Status              : {parser.status if parser else 'NOT_RUN'}
+Agent status      : {result.status}
+Total findings      : {parser.output_findings if parser else 0}
+Warnings            : {parser.warnings if parser else 0}
+Errors              : {parser.errors if parser else 0}
+KRI mismatches      : {result.kri.mismatches}
+
+APPLICATION ENRICHMENT (EXTERNAL)
+---------------------------------
+Status              : {value('status')}
+Findings with AUID  : {value('findings_with_auid')}
+Findings without AUID: {value('findings_without_auid')}
+Matched findings    : {value('matched_findings')}
+Unmatched findings  : {value('unmatched_findings')}
+Enriched findings   : {value('enriched_findings')}
+Match rate          : {match_rate_display}
+Application conflicts: {value('application_conflicts')}
+Field conflicts     : {value('field_conflicts')}
+Input = Output      : {integrity_display}
+
+POSTGRESQL
+----------
+Status              : {postgres_status}
+
+GLOBAL
+------
+Parser status       : {parser.status if parser else 'NOT_RUN'}
+Data loss           : {data_loss}
+Pipeline output     : {pipeline_output} findings"""
+
+
 def _render_report(result: ParserAgentResult) -> str:
     parser = result.parser
     artifacts = "\n".join(f"- `{name}`: `{path}`" for name, path in result.artifacts.items()) or "- None"
@@ -32,7 +111,6 @@ def _render_report(result: ParserAgentResult) -> str:
 | Warnings | {parser.warnings if parser else 0} |
 | Retries | {parser.retry_count if parser else 0} / {parser.max_attempts if parser else 3} |
 | KRI mismatches | {result.kri.mismatches} |
-| Application enrichment | {result.application_enrichment['status']} |
 | LLM | {result.llm_status} |
 | PostgreSQL | {result.dependencies['postgresql']} |
 | Persistence | {result.persistence_status} |
@@ -51,6 +129,12 @@ def _render_report(result: ParserAgentResult) -> str:
 ## Artifacts
 
 {artifacts}
+
+## Pipeline execution summary
+
+```text
+{render_execution_summary(result)}
+```
 """
 
 
@@ -118,6 +202,7 @@ def run_parser_agent(
     result = _build_result(state, input_file)
     destination = Path(output_dir)
     destination.mkdir(parents=True, exist_ok=True)
+    result.external_application_enrichment = _load_external_enrichment_report(destination)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     json_path = destination / f"PARSER-Agent_Result-{timestamp}.json"
     markdown_path = destination / f"PARSER-Agent_Report-{timestamp}.md"
