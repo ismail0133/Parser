@@ -13,6 +13,59 @@ from src.reporting.finding_analysis import (
 )
 
 
+def _load_application_enrichment_report(output_dir: str | Path) -> dict | None:
+    report_path = Path(output_dir) / "application_enrichment_report.json"
+    if not report_path.is_file():
+        return None
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return report if isinstance(report, dict) else None
+
+
+def _render_execution_summary(
+    parser_result: ParserResult, enrichment_report: dict | None
+) -> str:
+    lines = [
+        "## PARSER",
+        "",
+        f"Input rows       : {parser_result.input_rows}",
+        f"Output findings  : {parser_result.output_findings}",
+        f"Warnings         : {parser_result.warnings}",
+        f"Errors           : {parser_result.errors}",
+        f"Status           : {parser_result.status}",
+        "",
+        "## APPLICATION ENRICHMENT",
+        "",
+    ]
+    if enrichment_report is None:
+        lines.append("Status             : NOT_AVAILABLE")
+        return "\n".join(lines)
+
+    input_equals_output = enrichment_report.get("input_equals_output")
+    integrity = (
+        "YES" if input_equals_output is True
+        else "NO" if input_equals_output is False
+        else "NOT_AVAILABLE"
+    )
+    match_rate = enrichment_report.get("match_rate", "NOT_AVAILABLE")
+    if isinstance(match_rate, (int, float)):
+        match_rate = f"{match_rate}%"
+    lines.extend([
+        f"Status             : {enrichment_report.get('status', 'NOT_AVAILABLE')}",
+        f"Findings with AUID : {enrichment_report.get('findings_with_auid', 'NOT_AVAILABLE')}",
+        f"Without AUID       : {enrichment_report.get('findings_without_auid', 'NOT_AVAILABLE')}",
+        f"Matched findings   : {enrichment_report.get('matched_findings', 'NOT_AVAILABLE')}",
+        f"Enriched findings  : {enrichment_report.get('enriched_findings', 'NOT_AVAILABLE')}",
+        f"Match rate         : {match_rate}",
+        f"Conflicts          : {enrichment_report.get('application_conflicts', 'NOT_AVAILABLE')}",
+        f"Field conflicts    : {enrichment_report.get('field_conflicts', 'NOT_AVAILABLE')}",
+        f"Input = Output     : {integrity}",
+    ])
+    return "\n".join(lines)
+
+
 def write_outputs(
     findings,
     anomalies,
@@ -82,27 +135,20 @@ def write_outputs(
     return {key: destination / name for key, name in names.items()}
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     cli = argparse.ArgumentParser(description="Parse RAW Finding CSV into obj_finding JSONL")
     cli.add_argument("--input", required=True, help="Path to the confidential RAW Finding CSV")
     cli.add_argument("--limit", type=int, default=None, help="Read only the first N data rows")
     cli.add_argument("--output-dir", default="output", help="Output directory")
-    args = cli.parse_args()
+    args = cli.parse_args(argv)
     findings, anomalies, stats = parse_findings(args.input, limit=args.limit)
     artifacts = write_outputs(findings, anomalies, stats, args.output_dir, input_path=args.input)
-    status = (
-        "FAILED" if stats["error_count"] > 0
-        else "SUCCESS_WITH_WARNINGS" if stats["warning_count"] > 0
-        else "SUCCESS"
+    parser_result = ParserResult.model_validate_json(
+        artifacts["parser_result"].read_text(encoding="utf-8")
     )
-    print(f"Input rows       : {stats['input_rows']}")
-    print(f"Parsed success   : {stats['parsed_successfully']}")
-    print(f"Warnings         : {stats['warning_count']}")
-    print(f"Errors           : {stats['error_count']}")
-    print(f"Output findings  : {stats['output_findings']}")
-    print(f"Duration         : {stats['duration_seconds']:.3f}s")
-    print(f"Parser status    : {status}")
-    print(f"App enrichment   : {stats['application_enrichment']['status']}")
+    enrichment_report = _load_application_enrichment_report(args.output_dir)
+    print(_render_execution_summary(parser_result, enrichment_report))
+    print(f"Duration         : {parser_result.duration_seconds:.3f}s")
     print(f"KRI percentage   : {stats['kri_ras9']['aggregate']['percentage']}")
     print(f"KRI target <30%  : {stats['kri_ras9']['aggregate']['business_target_met']}")
     print("Artifacts        :")
