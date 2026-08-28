@@ -1,62 +1,45 @@
-# Obj Application V1
+# Obj Application
 
-Le Parser Application construit un référentiel canonique depuis le même CSV RAW
-que le Parser Finding, sans modifier ce dernier :
+## Source et périmètre
 
-```text
-RAW Finding CSV -> contrôles par AUID -> obj_applications.jsonl
-```
+La source est le CSV APM. Seules les applications référencées par
+`obj_findings.jsonl` sont traitées. La clé de rapprochement est `AUID`, après
+`strip()` et conversion en majuscules; seuls les AUID au format `^AP[0-9]+$`
+sont utilisés.
 
-## Mapping confirmé par le schéma RAW
+## Mapping
 
-| RAW | obj_application |
+| CSV APM | obj_application |
 |---|---|
 | `AUID` | `auid` |
-| `CODE_APP` | `code_app` |
 | `Legacy APP ID` | `trigram` |
-| `Application Name` | `application_name` |
-| `AppSec Profile` | `appsec` |
-| `Business Lines` | `business_line` |
-| `Production Domain Manager` | `production_domain_manager` |
-| `Production Manager` | `production_manager` |
+| `DAP Name` | `name` |
 
-`CODE_APP` reste distinct du trigram et ne remplace jamais un AUID absent.
-Le format AUID réutilise la validation existante `AP[0-9]+`.
+Ces trois colonnes sont obligatoires. Aucun fallback vers une autre colonne
+n'est appliqué.
 
-## Canonisation et conflits
+## Lignes multiples
 
-Les vides techniques sont normalisés à `None`. Pour chaque AUID et chaque
-propriété, une valeur non vide unique est conservée. Plusieurs valeurs distinctes
-produisent `APPLICATION_CONFLICT` et la propriété canonique reste `None` : aucune
-première/dernière valeur, mode ou valeur majoritaire n'est sélectionné.
+Plusieurs lignes ayant le même AUID et les mêmes données applicatives produisent
+un seul `obj_application`. Si `Legacy APP ID` ou `DAP Name` contient plusieurs
+valeurs distinctes pour un même AUID, aucune valeur arbitraire n'est choisie et
+aucune application n'est générée pour cet AUID. Le rapport indique l'AUID, le
+champ et le nombre de valeurs distinctes sans exposer les valeurs.
 
-Une ligne sans AUID produit `MISSING_AUID` et reste exclue. Un AUID non vide ne
-respectant pas la politique de format existante produit `INVALID_AUID`, mais est
-conservé dans le référentiel afin de ne pas perdre une Application réellement
-présente dans le RAW. `CODE_APP` n'est jamais utilisé comme fallback.
+La règle documentaire de suffixage `-1`, `-2` reste **TO_VALIDATE** et n'est pas
+appliquée aux répétitions de lignes APM.
 
-## Exécution complète
+## Exécution
 
 ```powershell
 python scripts/build_obj_applications.py `
-  --input "data/finding_list_fixed.csv" `
+  --input "data/REAL_APM_FILE.csv" `
   --findings "output/obj_findings.jsonl" `
   --output-dir "output"
 ```
 
-Le script n'applique aucune limite et affiche `df.shape` et
-`df.columns.tolist()`. Il produit :
+Fichiers produits :
 
-- `output/obj_applications.jsonl` ;
-- `output/application_anomalies.json` ;
-- `output/application_analysis.json`.
-
-Le rapprochement avec `obj_findings` est facultatif via `--findings` et ne
-modifie jamais les Findings.
-
-## Champs non couverts par le CSV V1
-
-Les statuts, priorités Application, valeurs numériques AppSec/vital/CIAT,
-`vital`, `cis`, `strategic`, continuité, sous-business line et autres managers ne
-sont ni déduits ni ajoutés au modèle V1. Ils restent à traiter avec une source
-autoritaire future, notamment CIB APM.
+- `output/obj_applications.jsonl`
+- `output/application_anomalies.json`
+- `output/application_analysis.json`

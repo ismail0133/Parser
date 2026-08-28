@@ -1,28 +1,22 @@
-"""Canonical Application V1 models built from the RAW Finding CSV."""
+"""Canonical Application model built from the authoritative APM CSV."""
 
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class ObjApplication(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     auid: str
-    code_app: str | None = None
     trigram: str | None = None
-    application_name: str | None = None
-    appsec: str | None = None
-    business_line: str | None = None
-    production_domain_manager: str | None = None
-    production_manager: str | None = None
+    name: str | None = None
 
 
 class ApplicationAnomaly(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    error_type: Literal["MISSING_AUID", "INVALID_AUID", "APPLICATION_CONFLICT"]
-    row_index: int | None = None
-    auid: str | None = None
-    field: str
-    values: list[Any] = Field(default_factory=list)
+    error_type: Literal["APPLICATION_CONFLICT"]
+    auid: str
+    field: Literal["trigram", "name"]
+    distinct_value_count: int

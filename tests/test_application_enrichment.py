@@ -20,13 +20,8 @@ def finding(auid="AP100", **overrides):
 def application(auid="AP100", **overrides):
     payload = {
         "auid": auid,
-        "code_app": "CODE",
         "trigram": "TRI",
-        "application_name": "Application",
-        "appsec": "P2",
-        "business_line": "Business",
-        "production_domain_manager": "Domain manager",
-        "production_manager": "Manager",
+        "name": "Application",
     }
     payload.update(overrides)
     return payload
@@ -45,7 +40,7 @@ def test_matched_finding_fills_only_supported_empty_fields():
     )
     assert status == "ENRICHED"
     assert result["application"] == {
-        "auid": "AP100", "trigram": "TRI", "name": "Application", "appsec": "P2",
+        "auid": "AP100", "trigram": "TRI", "name": "Application", "appsec": None,
     }
     assert result["business_line"] is None
     assert "code_app" not in result["application"]
@@ -116,7 +111,7 @@ def test_different_value_is_preserved_and_conflict_reported():
 def test_duplicate_application_auid_is_not_selected():
     source = finding()
     result, status, anomalies = enrich_finding_payload(
-        source, {"AP100": [application(), application(application_name="Other")]},
+        source, {"AP100": [application(), application(name="Other")]},
     )
     assert result == source
     assert status == "APPLICATION_CONFLICT"
@@ -149,7 +144,7 @@ def test_duplicate_application_generates_warning_and_conflict_status(tmp_path):
     applications_path = tmp_path / "obj_applications.jsonl"
     output_path = tmp_path / "obj_findings_enriched.jsonl"
     write_jsonl(findings_path, [finding()])
-    write_jsonl(applications_path, [application(), application(application_name="Other")])
+    write_jsonl(applications_path, [application(), application(name="Other")])
     report = enrich_findings_jsonl(findings_path, applications_path, output_path)
     anomalies = json.loads((tmp_path / "application_enrichment_anomalies.json").read_text())
     assert report["application_conflicts"] == 1

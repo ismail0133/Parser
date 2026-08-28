@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build canonical obj_applications.jsonl from the RAW Finding CSV."""
+"""Build scoped obj_applications.jsonl from an APM CSV and obj_findings."""
 
 from __future__ import annotations
 
@@ -8,28 +8,30 @@ import json
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.application_parser import (
-    APPLICATION_COLUMN_MAPPING,
-    analyze_finding_coverage,
-    parse_applications,
-)
-from src.loaders.finding_loader import load_findings
+from src.application_parser import APPLICATION_COLUMN_MAPPING, extract_finding_auids, parse_applications
 
 
-def write_outputs(input_path: Path, output_dir: Path, findings_path: Path | None = None):
-    frame = load_findings(input_path)
-    print(f"df.shape = {frame.shape}")
-    print(f"df.columns.tolist() = {frame.columns.tolist()}")
-    applications, anomalies, stats = parse_applications(frame)
-    coverage = None
-    if findings_path is not None:
-        if not findings_path.is_file():
-            raise FileNotFoundError(f"obj_findings file not found: {findings_path}")
-        coverage = analyze_finding_coverage(findings_path, applications)
+def _load_apm_csv(path: Path) -> pd.DataFrame:
+    if not path.is_file():
+        raise FileNotFoundError(f"APM CSV file not found: {path}")
+    try:
+        frame = pd.read_csv(path, dtype=object, keep_default_na=False)
+    except (OSError, pd.errors.ParserError, UnicodeDecodeError) as exc:
+        raise ValueError(f"Unable to read APM CSV {path}: {exc}") from exc
+    return frame
+
+
+def write_outputs(input_path: Path, findings_path: Path, output_dir: Path):
+    target_auids, finding_stats = extract_finding_auids(findings_path)
+    frame = _load_apm_csv(input_path)
+    applications, anomalies, application_stats = parse_applications(frame, target_auids)
+
     output_dir.mkdir(parents=True, exist_ok=True)
     applications_path = output_dir / "obj_applications.jsonl"
     anomalies_path = output_dir / "application_anomalies.json"
@@ -43,15 +45,16 @@ def write_outputs(input_path: Path, output_dir: Path, findings_path: Path | None
         encoding="utf-8",
     )
     report = {
-        **stats,
+        **finding_stats,
+        **application_stats,
         "source_file": str(input_path.resolve()),
-        "source_shape": list(frame.shape),
-        "source_columns": frame.columns.tolist(),
-        "application_columns": ["AUID", *APPLICATION_COLUMN_MAPPING],
-        "finding_coverage": coverage,
+        "findings_file": str(findings_path.resolve()),
+        "required_columns": list(APPLICATION_COLUMN_MAPPING),
+        "mapping": APPLICATION_COLUMN_MAPPING,
         "artifacts": {
             "obj_applications": str(applications_path.resolve()),
             "anomalies": str(anomalies_path.resolve()),
+            "analysis": str(analysis_path.resolve()),
         },
     }
     analysis_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -61,12 +64,12 @@ def write_outputs(input_path: Path, output_dir: Path, findings_path: Path | None
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", required=True, type=Path)
-    parser.add_argument("--output-dir", type=Path, default=Path("output"))
-    parser.add_argument("--findings", type=Path)
+    parser.add_argument("--findings", required=True, type=Path)
+    parser.add_argument("--output-dir", required=True, type=Path)
     args = parser.parse_args(argv)
     try:
-        paths = write_outputs(args.input, args.output_dir, args.findings)
-    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        paths = write_outputs(args.input, args.findings, args.output_dir)
+    except (FileNotFoundError, OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
     print(json.dumps(paths[3], ensure_ascii=False, indent=2))

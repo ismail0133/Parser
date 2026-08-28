@@ -1,11 +1,11 @@
-"""Dedicated RAW dataframe to canonical obj_application parser."""
+"""Build scoped obj_application records from the authoritative APM CSV."""
 
 from __future__ import annotations
 
 import json
 from collections import Counter
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import pandas as pd
 
@@ -13,116 +13,121 @@ from src.cleaning.finding_cleaner import normalize_string
 from src.models.application import ApplicationAnomaly, ObjApplication
 from src.validation.finding_validator import validate_auid
 
-
 APPLICATION_COLUMN_MAPPING = {
-    "CODE_APP": "code_app",
+    "AUID": "auid",
     "Legacy APP ID": "trigram",
-    "Application Name": "application_name",
-    "AppSec Profile": "appsec",
-    "Business Lines": "business_line",
-    "Production Domain Manager": "production_domain_manager",
-    "Production Manager": "production_manager",
+    "DAP Name": "name",
 }
+REQUIRED_APPLICATION_COLUMNS = list(APPLICATION_COLUMN_MAPPING)
 
 
-def _canonical_value(values: Iterable[Any]) -> tuple[Any | None, list[Any]]:
-    distinct = sorted(
-        {value for raw in values if (value := normalize_string(raw)) is not None}
-    )
-    return (distinct[0], []) if len(distinct) == 1 else (None, distinct)
-
-
-def parse_applications(
-    frame: pd.DataFrame,
-) -> tuple[list[ObjApplication], list[ApplicationAnomaly], dict[str, Any]]:
-    """Build one Application per valid AUID without choosing conflicting values."""
-    required = ["AUID", *APPLICATION_COLUMN_MAPPING]
-    missing_columns = [column for column in required if column not in frame.columns]
-    if missing_columns:
-        raise ValueError(f"Missing Application CSV columns: {missing_columns}")
-
-    anomalies: list[ApplicationAnomaly] = []
-    rows_by_auid: dict[str, list[int]] = {}
-    missing_auid_rows = 0
-    invalid_auid_rows = 0
-    for position, value in enumerate(frame["AUID"].tolist(), start=1):
-        normalized = normalize_string(value)
-        if normalized is None:
-            missing_auid_rows += 1
-            anomalies.append(ApplicationAnomaly(
-                error_type="MISSING_AUID", row_index=position, field="auid",
-            ))
-            continue
-        auid = normalized.upper()
-        if not validate_auid(auid):
-            invalid_auid_rows += 1
-            anomalies.append(ApplicationAnomaly(
-                error_type="INVALID_AUID", row_index=position, field="auid", values=[normalized],
-            ))
-        rows_by_auid.setdefault(auid, []).append(position - 1)
-
-    applications: list[ObjApplication] = []
-    applications_with_conflicts: set[str] = set()
-    null_counts: Counter[str] = Counter()
-    conflict_counts: Counter[str] = Counter()
-    for auid in sorted(rows_by_auid):
-        row_indexes = rows_by_auid[auid]
-        data: dict[str, Any] = {"auid": auid}
-        for source_column, target_field in APPLICATION_COLUMN_MAPPING.items():
-            value, conflicts = _canonical_value(frame.iloc[row_indexes][source_column].tolist())
-            data[target_field] = value
-            if value is None:
-                null_counts[target_field] += 1
-            if conflicts:
-                applications_with_conflicts.add(auid)
-                conflict_counts[target_field] += 1
-                anomalies.append(ApplicationAnomaly(
-                    error_type="APPLICATION_CONFLICT", auid=auid,
-                    field=target_field, values=conflicts,
-                ))
-        applications.append(ObjApplication.model_validate(data))
-
-    stats = {
-        "input_rows": len(frame),
-        "distinct_auid": len(rows_by_auid),
-        "valid_applications": len(applications),
-        "missing_auid_rows": missing_auid_rows,
-        "invalid_auid_rows": invalid_auid_rows,
-        "applications_with_conflicts": len(applications_with_conflicts),
-        "conflict_count_by_field": dict(sorted(conflict_counts.items())),
-        "null_count_by_field": {
-            field: null_counts.get(field, 0) for field in APPLICATION_COLUMN_MAPPING.values()
-        },
-        "output_applications": len(applications),
-    }
-    return applications, anomalies, stats
-
-
-def analyze_finding_coverage(
-    findings_path: str | Path, applications: Iterable[ObjApplication]
-) -> dict[str, Any]:
-    finding_auids: set[str] = set()
+def extract_finding_auids(findings_path: str | Path) -> tuple[set[str], dict[str, int]]:
+    """Return distinct valid finding AUIDs and runtime extraction metrics."""
     path = Path(findings_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"obj_findings file not found: {path}")
+
+    valid_auids: set[str] = set()
+    normalized_nonempty_auids: set[str] = set()
+    missing_count = 0
+    invalid_count = 0
     with path.open(encoding="utf-8") as stream:
-        for line_no, line in enumerate(stream, start=1):
+        for line_number, line in enumerate(stream, start=1):
+            if not line.strip():
+                continue
             try:
                 payload = json.loads(line)
             except json.JSONDecodeError as exc:
-                raise ValueError(f"Invalid obj_finding JSON on line {line_no}: {exc.msg}") from exc
-            application = payload.get("application") or {}
-            value = normalize_string(application.get("auid"))
-            if value is not None:
-                finding_auids.add(value.upper())
-    application_auids = {application.auid for application in applications}
-    matched = finding_auids & application_auids
-    unmatched = finding_auids - application_auids
-    return {
-        "distinct_auid_in_obj_findings": len(finding_auids),
-        "distinct_auid_in_obj_applications": len(application_auids),
-        "matched_auid": len(matched),
-        "unmatched_auid": len(unmatched),
-        "unmatched_auid_values": sorted(unmatched),
-        "match_rate_percent": (
-            round(100 * len(matched) / len(finding_auids), 4) if finding_auids else None
+                raise ValueError(
+                    f"Invalid obj_finding JSON on line {line_number}: {exc.msg}"
+                ) from exc
+            if not isinstance(payload, dict):
+                raise ValueError(
+                    f"Invalid obj_finding on line {line_number}: expected object"
+                )
+            application = payload.get("application")
+            raw_auid = application.get("auid") if isinstance(application, dict) else None
+            normalized = normalize_string(raw_auid)
+            if normalized is None:
+                missing_count += 1
+                continue
+            auid = normalized.upper()
+            normalized_nonempty_auids.add(auid)
+            if not validate_auid(auid):
+                invalid_count += 1
+                continue
+            valid_auids.add(auid)
+
+    return valid_auids, {
+        "target_finding_auids": len(normalized_nonempty_auids),
+        "valid_target_auids": len(valid_auids),
+        "invalid_finding_auids": invalid_count,
+        "missing_finding_auids": missing_count,
+    }
+
+
+def _normalized_series(series: pd.Series) -> pd.Series:
+    return series.map(normalize_string)
+
+
+def parse_applications(
+    frame: pd.DataFrame, target_auids: set[str]
+) -> tuple[list[ObjApplication], list[ApplicationAnomaly], dict[str, Any]]:
+    """Filter APM rows and build at most one coherent Application per target AUID."""
+    missing_columns = [
+        column for column in REQUIRED_APPLICATION_COLUMNS if column not in frame.columns
+    ]
+    if missing_columns:
+        raise ValueError(f"Missing required APM CSV columns: {missing_columns}")
+
+    normalized_auids = _normalized_series(frame["AUID"]).str.upper()
+    scoped = frame.loc[normalized_auids.isin(target_auids)].copy()
+    scoped["AUID"] = normalized_auids.loc[scoped.index]
+
+    applications: list[ObjApplication] = []
+    anomalies: list[ApplicationAnomaly] = []
+    inconsistent_auids: set[str] = set()
+    conflict_counts: Counter[str] = Counter()
+    found_auids = set(scoped["AUID"].tolist())
+
+    for auid, rows in scoped.groupby("AUID", sort=True):
+        data: dict[str, Any] = {"auid": auid}
+        conflicts: list[tuple[str, int]] = []
+        for source_column, target_field in (
+            ("Legacy APP ID", "trigram"),
+            ("DAP Name", "name"),
+        ):
+            values = _normalized_series(rows[source_column]).dropna().unique()
+            if len(values) > 1:
+                conflicts.append((target_field, len(values)))
+            else:
+                data[target_field] = values[0] if len(values) == 1 else None
+        if conflicts:
+            inconsistent_auids.add(auid)
+            for field, distinct_value_count in conflicts:
+                conflict_counts[field] += 1
+                anomalies.append(ApplicationAnomaly(
+                    error_type="APPLICATION_CONFLICT",
+                    auid=auid,
+                    field=field,
+                    distinct_value_count=distinct_value_count,
+                ))
+            continue
+        applications.append(ObjApplication.model_validate(data))
+
+    missing_auids = target_auids - found_auids
+    stats = {
+        "total_csv_rows": len(frame),
+        "matching_apm_rows": len(scoped),
+        "auids_found_in_apm": len(found_auids),
+        "auids_missing_in_apm": len(missing_auids),
+        "missing_auid_values": sorted(missing_auids),
+        "applications_generated": len(applications),
+        "applications_with_inconsistent_data": len(inconsistent_auids),
+        "inconsistencies_by_field": dict(sorted(conflict_counts.items())),
+        "coverage_rate": (
+            round(100 * len(found_auids) / len(target_auids), 4)
+            if target_auids else None
         ),
     }
+    return applications, anomalies, stats

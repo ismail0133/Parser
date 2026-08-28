@@ -39,12 +39,9 @@ def enrich_with_application(
 # Only fields with an existing, unambiguous destination in Finding are eligible.
 APPLICATION_FIELD_TARGETS = {
     "trigram": ("application", "trigram"),
-    "application_name": ("application", "name"),
-    "appsec": ("application", "appsec"),
+    "name": ("application", "name"),
 }
-UNMAPPED_APPLICATION_FIELDS = (
-    "code_app", "business_line", "production_domain_manager", "production_manager",
-)
+UNMAPPED_APPLICATION_FIELDS: tuple[str, ...] = ()
 
 
 def normalize_matching_auid(value: Any) -> str | None:
