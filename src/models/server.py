@@ -4,16 +4,16 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from src.models.finding import Server
-
-
-class ObjServer(Server):
-    """APM Server representation without changing the Finding Server contract."""
+class ObjServer(BaseModel):
+    """Dedicated APM Server contract, independent from Finding.Server."""
 
     model_config = ConfigDict(extra="forbid")
 
     hostname: str
     operating_system: str | None = None
+    os_name: str | None = None
+    os_version: str | None = None
+    environment: str | None = None
 
 
 class ServerAnomaly(BaseModel):

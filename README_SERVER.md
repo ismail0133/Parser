@@ -11,12 +11,19 @@ normalisé et validé, est présent dans `obj_findings.jsonl`.
 |---|---|
 | `Host` | `hostname` |
 | `OS Build` | `operating_system` |
+| `OS Build` | `os_name`, `os_version` (dérivation contrôlée) |
 | `Environment` | `environment` |
 
-Aucun fallback n'est appliqué. Aucune source APM n'est confirmée pour
-`sensitive` ou `authenticated_scan`; ces propriétés conservent les valeurs par
-défaut du modèle Server existant. `Asset ID` n'a aucun contrat correspondant
-dans le modèle ou la base actuels et reste **TO_VALIDATE**.
+Le contrat APM contient uniquement `hostname`, `operating_system`, `os_name`,
+`os_version` et `environment`. `environment_detail`, `sensitive` et
+`authenticated_scan` n'en font pas partie; le modèle historique utilisé dans
+Finding reste inchangé.
+
+La dérivation OS sépare la valeur avant son premier token commençant par un
+chiffre. Elle préserve toujours `operating_system`; si la séparation n'est pas
+fiable, `os_name` et `os_version` restent `null`. Aucun fallback n'est appliqué.
+`Asset ID` n'a aucun contrat correspondant dans le modèle ou la base actuels et
+reste **TO_VALIDATE**.
 
 Les serveurs sont consolidés par la valeur `Host` après trim, sans déclarer
 `hostname` unique globalement. Une incohérence non vide sur `OS Build` ou
@@ -38,4 +45,3 @@ Fichiers produits :
 - `output/application_server_relations.jsonl`
 - `output/server_anomalies.json`
 - `output/server_analysis.json`
-

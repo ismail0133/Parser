@@ -4,7 +4,8 @@ import pandas as pd
 import pytest
 
 from scripts.build_obj_servers import main, write_outputs
-from src.server_parser import parse_servers
+from src.models.finding import Server
+from src.server_parser import parse_os_build, parse_servers
 
 
 def apm_row(auid="AP100", host="SERVER01", os_build="Windows 2022", environment="PROD", **extra):
@@ -25,7 +26,7 @@ def write_findings(path, auids):
     )
 
 
-def test_confirmed_mapping_and_no_sensitive_sources():
+def test_confirmed_mapping_and_simplified_contract():
     frame = pd.DataFrame([apm_row(**{
         "CISO Top Critical Application": "Yes",
         "AppSec Criticality": "P4",
@@ -35,11 +36,30 @@ def test_confirmed_mapping_and_no_sensitive_sources():
     server = servers[0]
     assert server.hostname == "SERVER01"
     assert server.operating_system == "Windows 2022"
+    assert server.os_name == "Windows"
+    assert server.os_version == "2022"
     assert server.environment == "PROD"
-    assert server.sensitive is False
-    assert server.authenticated_scan is True
+    assert set(server.model_dump()) == {
+        "hostname", "operating_system", "os_name", "os_version", "environment",
+    }
     assert relations == [{"auid": "AP100", "hostname": "SERVER01"}]
     assert anomalies == []
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("RHEL 7 UPDATE", ("RHEL", "7 UPDATE")),
+        ("WINDOWS 2022", ("WINDOWS", "2022")),
+        ("Windows Server 2022", ("Windows Server", "2022")),
+        (None, (None, None)),
+        ("", (None, None)),
+        ("Linux", (None, None)),
+        ("2022", (None, None)),
+    ],
+)
+def test_conservative_os_build_parsing(value, expected):
+    assert parse_os_build(value) == expected
 
 
 def test_many_to_many_relations_and_server_consolidation():
@@ -76,11 +96,16 @@ def test_empty_os_and_environment_have_no_fallbacks():
     frame = pd.DataFrame([apm_row(os_build=" ", environment="", **{
         "OS Host Container": "Fallback OS",
         "Technology": "Other OS",
+        "Technology_Version": "99",
     })])
     servers, _, _, stats = parse_servers(frame, {"AP100"})
     assert servers[0].operating_system is None
+    assert servers[0].os_name is None
+    assert servers[0].os_version is None
     assert servers[0].environment is None
     assert stats["servers_without_operating_system"] == 1
+    assert stats["servers_without_os_name"] == 1
+    assert stats["servers_without_os_version"] == 1
     assert stats["servers_without_environment"] == 1
 
 
@@ -130,6 +155,12 @@ def test_outputs_are_valid_and_inputs_are_unchanged(tmp_path):
     server = json.loads(servers_path.read_text(encoding="utf-8"))
     assert server["hostname"] == "SERVER01"
     assert server["operating_system"] == "Windows 2022"
+    assert set(server) == {
+        "hostname", "operating_system", "os_name", "os_version", "environment",
+    }
+    assert "environment_detail" not in server
+    assert "sensitive" not in server
+    assert "authenticated_scan" not in server
     assert json.loads(relations_path.read_text(encoding="utf-8")) == {
         "auid": "AP100", "hostname": "SERVER01"
     }
@@ -140,9 +171,15 @@ def test_outputs_are_valid_and_inputs_are_unchanged(tmp_path):
     assert applications_path.read_bytes() == applications_before
 
 
+def test_historical_finding_server_contract_is_unchanged():
+    server = Server()
+    assert server.environment_detail is None
+    assert server.sensitive is False
+    assert server.authenticated_scan is True
+
+
 def test_cli_requires_all_paths(tmp_path):
     csv_path = tmp_path / "apm.csv"
     pd.DataFrame([apm_row()]).to_csv(csv_path, index=False)
     with pytest.raises(SystemExit):
         main(["--input", str(csv_path)])
-

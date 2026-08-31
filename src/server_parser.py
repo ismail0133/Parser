@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
+import re
 from typing import Any
 
 import pandas as pd
@@ -21,6 +22,21 @@ REQUIRED_SERVER_COLUMNS = ["AUID", *SERVER_COLUMN_MAPPING]
 
 def _normalized_series(series: pd.Series) -> pd.Series:
     return series.map(normalize_string)
+
+
+def parse_os_build(value: Any) -> tuple[str | None, str | None]:
+    """Conservatively split an OS build before its first digit-led token."""
+    operating_system = normalize_string(value)
+    if operating_system is None:
+        return None, None
+    version_start = re.search(r"(?<!\S)(?=\d)", operating_system)
+    if version_start is None:
+        return None, None
+    os_name = operating_system[:version_start.start()].strip()
+    os_version = operating_system[version_start.start():].strip()
+    if not os_name or not os_version:
+        return None, None
+    return os_name, os_version
 
 
 def parse_servers(
@@ -71,6 +87,9 @@ def parse_servers(
                     distinct_value_count=distinct_value_count,
                 ))
             continue
+        data["os_name"], data["os_version"] = parse_os_build(
+            data.get("operating_system")
+        )
         servers.append(ObjServer.model_validate(data))
 
     if missing_host_count:
@@ -91,6 +110,8 @@ def parse_servers(
         server.operating_system is not None for server in servers
     )
     environment_populated = sum(server.environment is not None for server in servers)
+    os_name_populated = sum(server.os_name is not None for server in servers)
+    os_version_populated = sum(server.os_version is not None for server in servers)
     stats = {
         "total_apm_rows": len(frame),
         "matching_apm_rows": len(scoped),
@@ -100,6 +121,10 @@ def parse_servers(
         "servers_generated": len(servers),
         "servers_with_operating_system": operating_system_populated,
         "servers_without_operating_system": len(servers) - operating_system_populated,
+        "servers_with_os_name": os_name_populated,
+        "servers_without_os_name": len(servers) - os_name_populated,
+        "servers_with_os_version": os_version_populated,
+        "servers_without_os_version": len(servers) - os_version_populated,
         "servers_with_environment": environment_populated,
         "servers_without_environment": len(servers) - environment_populated,
         "server_inconsistencies": len(inconsistent_hosts),
