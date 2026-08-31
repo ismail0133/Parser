@@ -14,7 +14,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.application_parser import APPLICATION_COLUMN_MAPPING, extract_finding_auids, parse_applications
+from src.application_parser import (
+    APPLICATION_COLUMN_MAPPING,
+    OPTIONAL_APPLICATION_COLUMNS,
+    REQUIRED_APPLICATION_COLUMNS,
+    extract_finding_auids,
+    parse_applications,
+)
 
 
 def _load_apm_csv(path: Path) -> pd.DataFrame:
@@ -49,7 +55,8 @@ def write_outputs(input_path: Path, findings_path: Path, output_dir: Path):
         **application_stats,
         "source_file": str(input_path.resolve()),
         "findings_file": str(findings_path.resolve()),
-        "required_columns": list(APPLICATION_COLUMN_MAPPING),
+        "required_columns": REQUIRED_APPLICATION_COLUMNS,
+        "optional_columns": OPTIONAL_APPLICATION_COLUMNS,
         "mapping": APPLICATION_COLUMN_MAPPING,
         "artifacts": {
             "obj_applications": str(applications_path.resolve()),

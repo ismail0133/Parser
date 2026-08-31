@@ -17,8 +17,20 @@ APPLICATION_COLUMN_MAPPING = {
     "AUID": "auid",
     "Legacy APP ID": "trigram",
     "DAP Name": "name",
+    "IT Cluster": "business_line",
+    "AppSec Profile": "appsec",
+    "CIB Vital DAP": "vital",
+    "ITContinuityCriticality": "continuity_level",
+    "App Manager": "application_manager",
+    "Domain Manager": "domain_manager",
+    "Production Manager": "production_manager",
+    "Production Domain Manager": "production_domain_manager",
 }
-REQUIRED_APPLICATION_COLUMNS = list(APPLICATION_COLUMN_MAPPING)
+REQUIRED_APPLICATION_COLUMNS = ["AUID", "Legacy APP ID", "DAP Name"]
+OPTIONAL_APPLICATION_COLUMNS = [
+    column for column in APPLICATION_COLUMN_MAPPING
+    if column not in REQUIRED_APPLICATION_COLUMNS
+]
 
 
 def extract_finding_auids(findings_path: str | Path) -> tuple[set[str], dict[str, int]]:
@@ -93,11 +105,13 @@ def parse_applications(
     for auid, rows in scoped.groupby("AUID", sort=True):
         data: dict[str, Any] = {"auid": auid}
         conflicts: list[tuple[str, int]] = []
-        for source_column, target_field in (
-            ("Legacy APP ID", "trigram"),
-            ("DAP Name", "name"),
-        ):
-            values = _normalized_series(rows[source_column]).dropna().unique()
+        for source_column, target_field in APPLICATION_COLUMN_MAPPING.items():
+            if target_field == "auid":
+                continue
+            values = (
+                _normalized_series(rows[source_column]).dropna().unique()
+                if source_column in rows.columns else []
+            )
             if len(values) > 1:
                 conflicts.append((target_field, len(values)))
             else:
@@ -116,6 +130,19 @@ def parse_applications(
         applications.append(ObjApplication.model_validate(data))
 
     missing_auids = target_auids - found_auids
+    missing_optional_columns = [
+        column for column in OPTIONAL_APPLICATION_COLUMNS if column not in frame.columns
+    ]
+    completeness = {
+        f"{field}_populated": sum(
+            getattr(application, field) is not None for application in applications
+        )
+        for field in (
+            "business_line", "appsec", "vital", "continuity_level",
+            "application_manager", "domain_manager", "production_manager",
+            "production_domain_manager",
+        )
+    }
     stats = {
         "total_csv_rows": len(frame),
         "matching_apm_rows": len(scoped),
@@ -125,6 +152,8 @@ def parse_applications(
         "applications_generated": len(applications),
         "applications_with_inconsistent_data": len(inconsistent_auids),
         "inconsistencies_by_field": dict(sorted(conflict_counts.items())),
+        "missing_optional_columns": missing_optional_columns,
+        **completeness,
         "coverage_rate": (
             round(100 * len(found_auids) / len(target_auids), 4)
             if target_auids else None

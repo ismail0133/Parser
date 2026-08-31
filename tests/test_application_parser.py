@@ -8,7 +8,19 @@ from src.application_parser import extract_finding_auids, parse_applications
 
 
 def apm_row(auid="AP100", trigram="ABC", name="Payment App", **extra):
-    row = {"AUID": auid, "Legacy APP ID": trigram, "DAP Name": name}
+    row = {
+        "AUID": auid,
+        "Legacy APP ID": trigram,
+        "DAP Name": name,
+        "IT Cluster": "CIB",
+        "AppSec Profile": "P4",
+        "CIB Vital DAP": "Yes",
+        "ITContinuityCriticality": "Critical",
+        "App Manager": "Alice Manager",
+        "Domain Manager": "Bob Manager",
+        "Production Manager": "Carol Manager",
+        "Production Domain Manager": "Dan Manager",
+    }
     row.update(extra)
     return row
 
@@ -23,10 +35,18 @@ def write_findings(path, auids):
 
 
 def test_official_mapping_and_no_fallbacks():
-    frame = pd.DataFrame([apm_row(**{"Application Name": "Wrong", "APM APP ID": "AP999"})])
+    frame = pd.DataFrame([apm_row(**{
+        "Application Name": "Wrong", "APM APP ID": "AP999",
+        "AppSec Criticality": "WRONG APPSEC", "IT Sub Cluster": "WRONG LINE",
+        "Business Lines": "ALSO WRONG",
+    })])
     applications, anomalies, _ = parse_applications(frame, {"AP100"})
     assert applications[0].model_dump() == {
         "auid": "AP100", "trigram": "ABC", "name": "Payment App",
+        "business_line": "CIB", "appsec": "P4", "vital": "Yes",
+        "continuity_level": "Critical", "application_manager": "Alice Manager",
+        "domain_manager": "Bob Manager", "production_manager": "Carol Manager",
+        "production_domain_manager": "Dan Manager",
     }
     assert anomalies == []
 
@@ -67,7 +87,16 @@ def test_identical_repeated_rows_make_one_application():
 
 @pytest.mark.parametrize(
     ("changed_column", "expected_field"),
-    [("Legacy APP ID", "trigram"), ("DAP Name", "name")],
+    [
+        ("Legacy APP ID", "trigram"), ("DAP Name", "name"),
+        ("IT Cluster", "business_line"), ("AppSec Profile", "appsec"),
+        ("CIB Vital DAP", "vital"),
+        ("ITContinuityCriticality", "continuity_level"),
+        ("App Manager", "application_manager"),
+        ("Domain Manager", "domain_manager"),
+        ("Production Manager", "production_manager"),
+        ("Production Domain Manager", "production_domain_manager"),
+    ],
 )
 def test_inconsistent_application_data_is_reported_and_not_generated(changed_column, expected_field):
     second = apm_row()
@@ -89,6 +118,29 @@ def test_missing_required_column_fails_explicitly(missing):
         parse_applications(frame, {"AP100"})
 
 
+def test_missing_optional_columns_are_reported_without_fallback():
+    frame = pd.DataFrame([apm_row()]).drop(
+        columns=["AppSec Profile", "IT Cluster"]
+    )
+    applications, anomalies, stats = parse_applications(frame, {"AP100"})
+    assert applications[0].appsec is None
+    assert applications[0].business_line is None
+    assert anomalies == []
+    assert stats["missing_optional_columns"] == ["IT Cluster", "AppSec Profile"]
+
+
+def test_empty_optional_values_do_not_use_similarly_named_columns():
+    row = apm_row(**{
+        "IT Cluster": " ", "AppSec Profile": "",
+        "IT Sub Cluster": "Fallback line", "AppSec Criticality": "Fallback appsec",
+    })
+    applications, _, stats = parse_applications(pd.DataFrame([row]), {"AP100"})
+    assert applications[0].business_line is None
+    assert applications[0].appsec is None
+    assert stats["business_line_populated"] == 0
+    assert stats["appsec_populated"] == 0
+
+
 def test_jsonl_output_is_valid_and_findings_are_unchanged(tmp_path):
     csv_path = tmp_path / "real_apm.csv"
     pd.DataFrame([apm_row(), apm_row("AP200", "XYZ", "Outside")]).to_csv(csv_path, index=False)
@@ -102,6 +154,10 @@ def test_jsonl_output_is_valid_and_findings_are_unchanged(tmp_path):
 
     assert json.loads(applications_path.read_text(encoding="utf-8")) == {
         "auid": "AP100", "trigram": "ABC", "name": "Payment App",
+        "business_line": "CIB", "appsec": "P4", "vital": "Yes",
+        "continuity_level": "Critical", "application_manager": "Alice Manager",
+        "domain_manager": "Bob Manager", "production_manager": "Carol Manager",
+        "production_domain_manager": "Dan Manager",
     }
     assert json.loads(anomalies_path.read_text(encoding="utf-8")) == []
     assert json.loads(analysis_path.read_text(encoding="utf-8"))["applications_generated"] == 1
