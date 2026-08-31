@@ -7,7 +7,8 @@ from .finding import (
     Server,
 )
 from .application import ApplicationAnomaly, ObjApplication
+from .server import ObjServer, ServerAnomaly
 from .parser_result import ParserResult
 from .parser_agent_result import ParserAgentResult
 
-__all__ = ["Anomaly", "Application", "ApplicationAnomaly", "CveDetail", "Finding", "ObjApplication", "ParserAgentResult", "ParserResult", "RemediationStrategy", "Server"]
+__all__ = ["Anomaly", "Application", "ApplicationAnomaly", "CveDetail", "Finding", "ObjApplication", "ObjServer", "ParserAgentResult", "ParserResult", "RemediationStrategy", "Server", "ServerAnomaly"]
