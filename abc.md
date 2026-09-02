@@ -163,3 +163,23 @@ JOIN information_schema.constraint_column_usage AS ccu
     ON ccu.constraint_name = tc.constraint_name
 WHERE tc.constraint_type = 'FOREIGN KEY'
   AND tc.table_name = 'finding';
+
+
+
+
+
+
+
+  SELECT
+    f.id AS finding_id,
+    a.auid,
+    s.hostname,
+    v.cve
+FROM finding f
+LEFT JOIN application a
+    ON f.application_id = a.id
+LEFT JOIN server s
+    ON f.server_id = s.id
+LEFT JOIN vulnerability v
+    ON f.vulnerability_id = v.id
+LIMIT 20;
