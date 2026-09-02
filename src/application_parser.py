@@ -1,4 +1,4 @@
-"""Build scoped obj_application records from the authoritative APM CSV."""
+"""Construction des applications à partir du CSV APM."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ OPTIONAL_APPLICATION_COLUMNS = [
 
 
 def extract_finding_auids(findings_path: str | Path) -> tuple[set[str], dict[str, int]]:
-    """Return distinct valid finding AUIDs and runtime extraction metrics."""
+    """Extrait les AUID valides et distincts présents dans les findings."""
     path = Path(findings_path)
     if not path.is_file():
         raise FileNotFoundError(f"obj_findings file not found: {path}")
@@ -85,7 +85,7 @@ def _normalized_series(series: pd.Series) -> pd.Series:
 def parse_applications(
     frame: pd.DataFrame, target_auids: set[str]
 ) -> tuple[list[ObjApplication], list[ApplicationAnomaly], dict[str, Any]]:
-    """Filter APM rows and build at most one coherent Application per target AUID."""
+    """Construit une application cohérente par AUID du périmètre."""
     missing_columns = [
         column for column in REQUIRED_APPLICATION_COLUMNS if column not in frame.columns
     ]
@@ -116,16 +116,20 @@ def parse_applications(
                 conflicts.append((target_field, len(values)))
             else:
                 data[target_field] = values[0] if len(values) == 1 else None
+
+        # On ne choisit aucune valeur si les données APM sont incohérentes.
         if conflicts:
             inconsistent_auids.add(auid)
             for field, distinct_value_count in conflicts:
                 conflict_counts[field] += 1
-                anomalies.append(ApplicationAnomaly(
-                    error_type="APPLICATION_CONFLICT",
-                    auid=auid,
-                    field=field,
-                    distinct_value_count=distinct_value_count,
-                ))
+                anomalies.append(
+                    ApplicationAnomaly(
+                        error_type="APPLICATION_CONFLICT",
+                        auid=auid,
+                        field=field,
+                        distinct_value_count=distinct_value_count,
+                    )
+                )
             continue
         applications.append(ObjApplication.model_validate(data))
 

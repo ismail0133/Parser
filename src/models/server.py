@@ -1,11 +1,12 @@
-"""Canonical Server model built from the authoritative APM CSV."""
+"""Modèles utilisés pour les serveurs issus du CSV APM."""
 
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+
 class ObjServer(BaseModel):
-    """Dedicated APM Server contract, independent from Finding.Server."""
+    """Contrat Server propre au flux APM."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -17,7 +18,7 @@ class ObjServer(BaseModel):
 
 
 class ServerAnomaly(BaseModel):
-    """Report-only Server anomaly without exposing conflicting source values."""
+    """Anomalie Server sans exposition des valeurs sources."""
 
     model_config = ConfigDict(extra="forbid")
 

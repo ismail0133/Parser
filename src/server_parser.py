@@ -1,9 +1,9 @@
-"""Build scoped obj_server records and Application-Server relations from APM."""
+"""Construction des serveurs et de leurs relations depuis le CSV APM."""
 
 from __future__ import annotations
 
-from collections import Counter
 import re
+from collections import Counter
 from typing import Any
 
 import pandas as pd
@@ -25,7 +25,7 @@ def _normalized_series(series: pd.Series) -> pd.Series:
 
 
 def parse_os_build(value: Any) -> tuple[str | None, str | None]:
-    """Conservatively split an OS build before its first digit-led token."""
+    """Sépare un OS avant le premier bloc qui commence par un chiffre."""
     operating_system = normalize_string(value)
     if operating_system is None:
         return None, None
@@ -42,7 +42,7 @@ def parse_os_build(value: Any) -> tuple[str | None, str | None]:
 def parse_servers(
     frame: pd.DataFrame, target_auids: set[str]
 ) -> tuple[list[ObjServer], list[dict[str, str]], list[ServerAnomaly], dict[str, Any]]:
-    """Build coherent distinct servers and their distinct scoped AUID relations."""
+    """Construit les serveurs cohérents et leurs relations avec les AUID."""
     missing_columns = [
         column for column in REQUIRED_SERVER_COLUMNS if column not in frame.columns
     ]
@@ -76,16 +76,20 @@ def parse_servers(
                 conflicts.append((target_field, len(values)))
             else:
                 data[target_field] = values[0] if len(values) == 1 else None
+
+        # Un serveur incohérent n'est pas généré.
         if conflicts:
             inconsistent_hosts.add(hostname)
             for field, distinct_value_count in conflicts:
                 conflict_counts[field] += 1
-                anomalies.append(ServerAnomaly(
-                    error_type="SERVER_CONFLICT",
-                    hostname=hostname,
-                    field=field,
-                    distinct_value_count=distinct_value_count,
-                ))
+                anomalies.append(
+                    ServerAnomaly(
+                        error_type="SERVER_CONFLICT",
+                        hostname=hostname,
+                        field=field,
+                        distinct_value_count=distinct_value_count,
+                    )
+                )
             continue
         data["os_name"], data["os_version"] = parse_os_build(
             data.get("operating_system")
@@ -93,13 +97,16 @@ def parse_servers(
         servers.append(ObjServer.model_validate(data))
 
     if missing_host_count:
-        anomalies.append(ServerAnomaly(
-            error_type="MISSING_SERVER_HOSTNAME",
-            hostname=None,
-            field="hostname",
-            distinct_value_count=0,
-        ))
+        anomalies.append(
+            ServerAnomaly(
+                error_type="MISSING_SERVER_HOSTNAME",
+                hostname=None,
+                field="hostname",
+                distinct_value_count=0,
+            )
+        )
 
+    # La relation Application / Server est conservée séparément.
     generated_hosts = {server.hostname for server in servers}
     relations = [
         {"auid": auid, "hostname": hostname}

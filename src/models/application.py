@@ -1,4 +1,4 @@
-"""Canonical Application model built from the authoritative APM CSV."""
+"""Modèles utilisés pour les applications issues du CSV APM."""
 
 from typing import Literal
 

@@ -34,6 +34,7 @@ def _load_apm_csv(path: Path) -> pd.DataFrame:
 
 
 def write_outputs(input_path: Path, findings_path: Path, output_dir: Path):
+    """Écrit les applications, les anomalies et le rapport d'analyse."""
     target_auids, finding_stats = extract_finding_auids(findings_path)
     frame = _load_apm_csv(input_path)
     applications, anomalies, application_stats = parse_applications(frame, target_auids)

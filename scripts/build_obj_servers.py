@@ -28,6 +28,7 @@ def _load_apm_csv(path: Path) -> pd.DataFrame:
 
 
 def write_outputs(input_path: Path, findings_path: Path, output_dir: Path):
+    """Écrit les serveurs, les relations, les anomalies et le rapport."""
     target_auids, finding_stats = extract_finding_auids(findings_path)
     frame = _load_apm_csv(input_path)
     servers, relations, anomalies, server_stats = parse_servers(frame, target_auids)
@@ -88,4 +89,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

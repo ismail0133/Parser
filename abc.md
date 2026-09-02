@@ -123,3 +123,10 @@ PY
 & "C:\Program Files\PostgreSQL\15\bin\psql.exe" -U postgres -d vulnerability_ai -f "database/002_create_indexes.sql"
 
 & "C:\Program Files\PostgreSQL\15\bin\psql.exe" -U postgres -d vulnerability_ai
+
+
+$env:POSTGRES_HOST="localhost"
+$env:POSTGRES_DB="vulnerability_ai"
+$env:POSTGRES_USER="postgres"
+$env:POSTGRES_PASSWORD="TON_MOT_DE_PASSE_POSTGRES"
+$env:POSTGRES_PORT="5432"
