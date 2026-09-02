@@ -171,15 +171,32 @@ WHERE tc.constraint_type = 'FOREIGN KEY'
 
 
   SELECT
-    f.id AS finding_id,
+    f.finding_id,
     a.auid,
     s.hostname,
-    v.cve
-FROM finding f
-LEFT JOIN application a
-    ON f.application_id = a.id
-LEFT JOIN server s
-    ON f.server_id = s.id
-LEFT JOIN vulnerability v
-    ON f.vulnerability_id = v.id
+    v.cve_code
+FROM finding AS f
+LEFT JOIN application AS a
+    ON a.application_id = f.application_id
+LEFT JOIN server AS s
+    ON s.server_id = f.server_id
+LEFT JOIN vulnerability AS v
+    ON v.vulnerability_id = f.vulnerability_id
+ORDER BY f.finding_id
 LIMIT 20;
+
+
+
+SELECT
+    COUNT(*) AS total_findings,
+    COUNT(application_id) AS linked_applications,
+    COUNT(server_id) AS linked_servers,
+    COUNT(vulnerability_id) AS linked_vulnerabilities
+FROM finding;
+
+
+SELECT
+    COUNT(*) FILTER (WHERE application_id IS NULL) AS missing_application,
+    COUNT(*) FILTER (WHERE server_id IS NULL) AS missing_server,
+    COUNT(*) FILTER (WHERE vulnerability_id IS NULL) AS missing_vulnerability
+FROM finding;
