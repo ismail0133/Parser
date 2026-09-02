@@ -130,3 +130,13 @@ $env:POSTGRES_DB="vulnerability_ai"
 $env:POSTGRES_USER="postgres"
 $env:POSTGRES_PASSWORD="TON_MOT_DE_PASSE_POSTGRES"
 $env:POSTGRES_PORT="5432"
+
+
+SELECT COUNT(*) FROM application;
+SELECT COUNT(*) FROM finding;
+SELECT COUNT(*) FROM server;
+SELECT COUNT(*) FROM vulnerability;
+
+SELECT * FROM application LIMIT 5;
+
+SELECT * FROM application LIMIT 5;
