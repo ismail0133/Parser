@@ -116,3 +116,10 @@ print("warning_count :", result.get("warnings"))
 print("Parser status :", result.get("status"))
 PY
 ```
+
+
+& "C:\Program Files\PostgreSQL\15\bin\psql.exe" -U postgres -d vulnerability_ai -f "database/001_create_tables.sql"
+
+& "C:\Program Files\PostgreSQL\15\bin\psql.exe" -U postgres -d vulnerability_ai -f "database/002_create_indexes.sql"
+
+& "C:\Program Files\PostgreSQL\15\bin\psql.exe" -U postgres -d vulnerability_ai
