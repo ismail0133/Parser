@@ -200,3 +200,23 @@ SELECT
     COUNT(*) FILTER (WHERE server_id IS NULL) AS missing_server,
     COUNT(*) FILTER (WHERE vulnerability_id IS NULL) AS missing_vulnerability
 FROM finding;
+
+
+
+SELECT
+    COUNT(*) AS total_findings,
+    COUNT(*) FILTER (WHERE application_id IS NULL) AS without_application,
+    COUNT(*) FILTER (WHERE server_id IS NULL) AS without_server,
+    COUNT(*) FILTER (WHERE vulnerability_id IS NULL) AS without_vulnerability
+FROM finding;
+
+
+SELECT
+    COUNT(*) AS total_findings,
+    COUNT(application_id) AS linked_applications,
+    COUNT(server_id) AS linked_servers,
+    COUNT(vulnerability_id) AS linked_vulnerabilities,
+    COUNT(*) - COUNT(application_id) AS without_application,
+    COUNT(*) - COUNT(server_id) AS without_server,
+    COUNT(*) - COUNT(vulnerability_id) AS without_vulnerability
+FROM finding;
