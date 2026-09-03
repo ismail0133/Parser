@@ -220,3 +220,17 @@ SELECT
     COUNT(*) - COUNT(server_id) AS without_server,
     COUNT(*) - COUNT(vulnerability_id) AS without_vulnerability
 FROM finding;
+
+
+
+
+SELECT
+    finding_id,
+    source_unique_id,
+    application_auid,
+    application_id,
+    server_id,
+    vulnerability_id
+FROM finding
+WHERE application_id IS NULL
+   OR vulnerability_id IS NULL;
