@@ -234,3 +234,21 @@ SELECT
 FROM finding
 WHERE application_id IS NULL
    OR vulnerability_id IS NULL;
+
+
+
+
+   SELECT
+    f.finding_id,
+    a.auid,
+    s.hostname,
+    v.cve_code
+FROM finding AS f
+LEFT JOIN application AS a
+    ON a.application_id = f.application_id
+LEFT JOIN server AS s
+    ON s.server_id = f.server_id
+LEFT JOIN vulnerability AS v
+    ON v.vulnerability_id = f.vulnerability_id
+ORDER BY f.finding_id
+LIMIT 20;
