@@ -252,3 +252,72 @@ LEFT JOIN vulnerability AS v
     ON v.vulnerability_id = f.vulnerability_id
 ORDER BY f.finding_id
 LIMIT 20;
+
+
+
+SELECT
+    f.finding_id,
+    a.auid,
+    s.hostname,
+    v.cve_code,
+    f.severity_level,
+    f.overdue,
+    f.remediation_id,
+    f.proposed_action,
+    f.strategy_type,
+    f.strategy_description,
+    f.solution_links
+FROM finding AS f
+LEFT JOIN application AS a
+    ON a.application_id = f.application_id
+LEFT JOIN server AS s
+    ON s.server_id = f.server_id
+LEFT JOIN vulnerability AS v
+    ON v.vulnerability_id = f.vulnerability_id
+ORDER BY f.finding_id
+LIMIT 20;
+
+
+
+
+
+SELECT
+    COUNT(DISTINCT CASE
+        WHEN s.sensitive = TRUE
+         AND s.authenticated_scan = TRUE
+         AND f.overdue = TRUE
+         AND f.severity_level IN ('Critical', 'Very High')
+         AND COALESCE(f.false_positive, FALSE) = FALSE
+        THEN s.server_id
+    END) AS kri_numerator,
+
+    COUNT(DISTINCT CASE
+        WHEN s.sensitive = TRUE
+         AND s.authenticated_scan = TRUE
+        THEN s.server_id
+    END) AS kri_denominator,
+
+    ROUND(
+        100.0 *
+        COUNT(DISTINCT CASE
+            WHEN s.sensitive = TRUE
+             AND s.authenticated_scan = TRUE
+             AND f.overdue = TRUE
+             AND f.severity_level IN ('Critical', 'Very High')
+             AND COALESCE(f.false_positive, FALSE) = FALSE
+            THEN s.server_id
+        END)
+        /
+        NULLIF(
+            COUNT(DISTINCT CASE
+                WHEN s.sensitive = TRUE
+                 AND s.authenticated_scan = TRUE
+                THEN s.server_id
+            END),
+            0
+        ),
+        2
+    ) AS kri_percentage
+FROM finding AS f
+JOIN server AS s
+    ON s.server_id = f.server_id;
