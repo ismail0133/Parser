@@ -195,11 +195,21 @@ python scripts/load_obj_findings_to_postgres.py --applications output/obj_applic
 Ton `idx_server_hostname` actuel n’est pas suffisant : c’est un index normal. Il faut vraiment `UNIQUE`.
 
 
+L’erreur veut dire simplement :
+
+```text
+application_server_relation n’existe pas encore
+```
+
+Donc dans ton `TRUNCATE`, tu as mis une table qui n’a pas encore été créée par la migration `003`.
+
+Ce n’est pas grave. Utilise cette commande avec **IF EXISTS** :
+
+```sql
 TRUNCATE TABLE
     artifact,
     anomaly,
     finding,
-    application_server_relation,
     server,
     vulnerability,
     application,
@@ -207,3 +217,55 @@ TRUNCATE TABLE
     agent,
     pipeline_run
 RESTART IDENTITY CASCADE;
+```
+
+Comme `application_server_relation` n’existe pas encore, ne la mets pas pour l’instant.
+
+Ensuite fais dans l’ordre :
+
+### 1. Exécuter la migration Server
+
+Ouvre et exécute :
+
+```text
+database/003_server_dimension.sql
+```
+
+Après ça, la table `application_server_relation` doit exister.
+
+Vérifie :
+
+```sql
+SELECT table_name
+FROM information_schema.tables
+WHERE table_schema = 'public'
+  AND table_name = 'application_server_relation';
+```
+
+### 2. Exécuter la migration Artifact
+
+Ouvre et exécute :
+
+```text
+database/004_artifact_traceability.sql
+```
+
+### 3. Vérifier l’index unique server
+
+```sql
+SELECT
+    indexname,
+    indexdef
+FROM pg_indexes
+WHERE tablename = 'server';
+```
+
+Tu dois voir un `UNIQUE` sur `hostname`.
+
+### 4. Relancer le loader
+
+```powershell
+python scripts/load_obj_findings_to_postgres.py --applications output/obj_applications.jsonl --findings output/obj_findings.jsonl --servers output/obj_servers.jsonl --application-server-relations output/application_server_relations.jsonl --parser-result output/PARSER-Result-20260908-213424.json --parser-anomalies output/parser_anomalies.json
+```
+
+Donc là, ton erreur vient juste du fait que tu as essayé de vider une table qui n’existe pas encore. D’abord tu vides les tables existantes, puis tu exécutes `003`, puis `004`.
