@@ -412,3 +412,49 @@ SELECT
 FROM server
 WHERE hostname IS NOT NULL
   AND BTRIM(hostname) <> '';
+
+
+
+
+  SELECT
+    (SELECT COUNT(*) FROM finding) AS findings,
+    (SELECT COUNT(*) FROM application) AS applications,
+    (SELECT COUNT(*) FROM server) AS servers,
+    (SELECT COUNT(*) FROM vulnerability) AS vulnerabilities;
+
+
+
+    SELECT
+    f.finding_id,
+    a.auid,
+    s.hostname,
+    v.cve_code,
+    f.severity_level,
+    f.overdue,
+    f.proposed_action,
+    f.strategy_description
+FROM finding AS f
+LEFT JOIN application AS a
+    ON a.application_id = f.application_id
+LEFT JOIN server AS s
+    ON s.server_id = f.server_id
+LEFT JOIN vulnerability AS v
+    ON v.vulnerability_id = f.vulnerability_id
+ORDER BY f.finding_id
+LIMIT 20;
+
+
+
+SELECT
+    v.cve_code,
+    v.severity_level,
+    COUNT(f.finding_id) AS nb_findings
+FROM vulnerability AS v
+JOIN finding AS f
+    ON f.vulnerability_id = v.vulnerability_id
+GROUP BY
+    v.vulnerability_id,
+    v.cve_code,
+    v.severity_level
+ORDER BY nb_findings DESC
+LIMIT 10;
