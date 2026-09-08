@@ -193,3 +193,17 @@ python scripts/load_obj_findings_to_postgres.py --applications output/obj_applic
 ```
 
 Ton `idx_server_hostname` actuel n’est pas suffisant : c’est un index normal. Il faut vraiment `UNIQUE`.
+
+
+TRUNCATE TABLE
+    artifact,
+    anomaly,
+    finding,
+    application_server_relation,
+    server,
+    vulnerability,
+    application,
+    agent_run,
+    agent,
+    pipeline_run
+RESTART IDENTITY CASCADE;
