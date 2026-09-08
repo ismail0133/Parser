@@ -392,3 +392,8 @@ SELECT
         4
     ) AS kri_percentage
 FROM counts;
+
+$kri = (Get-Content "output\parser_report.json" -Raw |
+    ConvertFrom-Json).kri_ras9.aggregate
+
+$kri | Format-List
