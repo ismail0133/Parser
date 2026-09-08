@@ -26,6 +26,39 @@ FINDING_COLUMNS = (
     "false_positive_to_confirm", "eta", "strategy_type", "strategy_description",
     "solution_links", "source_payload",
 )
+KRI_RAS9_SQL = """
+WITH servers_by_hostname AS (
+    SELECT
+        BTRIM(s.hostname) AS hostname,
+        BOOL_OR(
+            s.sensitive IS TRUE
+            AND s.authenticated_scan IS TRUE
+        ) AS eligible,
+        BOOL_OR(
+            LOWER(f.severity_level) IN ('critical', 'very high')
+            AND f.overdue IS TRUE
+            AND f.false_positive IS NOT TRUE
+        ) AS qualifying
+    FROM finding AS f
+    JOIN server AS s
+        ON s.server_id = f.server_id
+    WHERE f.pipeline_run_id = %s
+      AND s.hostname IS NOT NULL
+      AND BTRIM(s.hostname) <> ''
+    GROUP BY BTRIM(s.hostname)
+),
+counts AS (
+    SELECT
+        COUNT(*) FILTER (WHERE eligible AND qualifying) AS numerator,
+        COUNT(*) FILTER (WHERE eligible) AS denominator
+    FROM servers_by_hostname
+)
+SELECT
+    numerator,
+    denominator,
+    ROUND(100.0 * numerator / NULLIF(denominator, 0), 4) AS kri_percentage
+FROM counts
+"""
 
 
 def _values(row: Mapping[str, Any], columns: Sequence[str]) -> tuple[Any, ...]:
@@ -83,6 +116,18 @@ class PostgresFindingRepository:
                 "UPDATE pipeline_run SET ended_at = %s, run_status = %s, output_findings = %s WHERE pipeline_run_id = %s",
                 (ended_at, status, output_findings, pipeline_run_id),
             )
+
+    def calculate_kri_ras9(self, pipeline_run_id: Any) -> dict[str, Any]:
+        """Recalcule le KRI Parser pour un run PostgreSQL précis."""
+        with self.connection.cursor() as cursor:
+            cursor.execute(KRI_RAS9_SQL, (pipeline_run_id,))
+            numerator, denominator, percentage = cursor.fetchone()
+        return {
+            "pipeline_run_id": str(pipeline_run_id),
+            "numerator": numerator,
+            "denominator": denominator,
+            "kri_percentage": float(percentage) if percentage is not None else None,
+        }
 
     def get_or_create_application(self, row: Mapping[str, Any]) -> Any:
         auid = row.get("auid")

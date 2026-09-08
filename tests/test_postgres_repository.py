@@ -21,7 +21,9 @@ class FakeCursor:
         self.connection.calls.append((sql, params))
         if self.connection.fail_on and self.connection.fail_on in sql:
             raise RuntimeError("database failure")
-        if sql.startswith("SELECT"):
+        if "WITH servers_by_hostname" in sql:
+            self.current_result = self.connection.kri_result
+        elif sql.startswith("SELECT"):
             self.current_result = None
         elif "RETURNING" in sql:
             self.connection.sequence += 1
@@ -32,10 +34,11 @@ class FakeCursor:
 
 
 class FakeConnection:
-    def __init__(self, fail_on=None):
+    def __init__(self, fail_on=None, kri_result=None):
         self.calls = []
         self.sequence = 0
         self.fail_on = fail_on
+        self.kri_result = kri_result
         self.commits = 0
         self.rollbacks = 0
 
@@ -70,6 +73,30 @@ def test_application_is_looked_up_by_confirmed_auid():
     assert select_params == ("AP10426",)
     assert "AP10426" not in insert_sql
     assert insert_params[0] == "AP10426"
+
+
+def test_kri_control_is_scoped_and_returns_json_compatible_values():
+    connection = FakeConnection(kri_result=(57, 100, 57))
+    repository = PostgresFindingRepository(connection)
+
+    result = repository.calculate_kri_ras9("run-123")
+
+    sql, params = connection.calls[0]
+    assert "f.pipeline_run_id = %s" in sql
+    assert "run-123" not in sql
+    assert params == ("run-123",)
+    assert result == {
+        "pipeline_run_id": "run-123",
+        "numerator": 57,
+        "denominator": 100,
+        "kri_percentage": 57.0,
+    }
+
+
+def test_kri_control_returns_none_when_denominator_is_zero():
+    connection = FakeConnection(kri_result=(0, 0, None))
+    result = PostgresFindingRepository(connection).calculate_kri_ras9("run-empty")
+    assert result["kri_percentage"] is None
 
 
 def mapped_finding(auid=None):
