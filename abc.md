@@ -397,3 +397,18 @@ $kri = (Get-Content "output\parser_report.json" -Raw |
     ConvertFrom-Json).kri_ras9.aggregate
 
 $kri | Format-List
+
+
+
+SELECT
+    COUNT(DISTINCT BTRIM(hostname)) AS total_hostnames,
+
+    COUNT(DISTINCT CASE
+        WHEN sensitive IS TRUE
+         AND authenticated_scan IS TRUE
+        THEN BTRIM(hostname)
+    END) AS eligible_kri_hostnames
+
+FROM server
+WHERE hostname IS NOT NULL
+  AND BTRIM(hostname) <> '';
