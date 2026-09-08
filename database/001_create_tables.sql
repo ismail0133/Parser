@@ -32,7 +32,7 @@ CREATE TABLE application (
 
 CREATE TABLE server (
     server_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    hostname TEXT,
+    hostname TEXT NOT NULL,
     operating_system TEXT,
     os_name TEXT,
     os_version TEXT,
@@ -41,7 +41,17 @@ CREATE TABLE server (
     sensitive BOOLEAN,
     authenticated_scan BOOLEAN,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT ck_server_hostname_normalized
+        CHECK (hostname = BTRIM(hostname) AND hostname <> ''),
+    CONSTRAINT uq_server_hostname UNIQUE (hostname)
+);
+
+CREATE TABLE application_server_relation (
+    application_id BIGINT NOT NULL REFERENCES application(application_id),
+    server_id BIGINT NOT NULL REFERENCES server(server_id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (application_id, server_id)
 );
 
 CREATE TABLE vulnerability (
@@ -87,7 +97,9 @@ CREATE TABLE agent_run (
     feedback_type TEXT,
     feedback_message TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_agent_run_attempt UNIQUE (pipeline_run_id, agent_id, attempt_no)
+    CONSTRAINT uq_agent_run_attempt UNIQUE (pipeline_run_id, agent_id, attempt_no),
+    CONSTRAINT uq_agent_run_pipeline_agent_run
+        UNIQUE (pipeline_run_id, agent_run_id)
 );
 
 CREATE TABLE finding (
@@ -137,11 +149,29 @@ CREATE TABLE anomaly (
 
 CREATE TABLE artifact (
     artifact_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    artifact_type TEXT,
-    filename TEXT,
-    storage_path TEXT,
-    sha256 TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    pipeline_run_id UUID NOT NULL,
+    agent_run_id BIGINT,
+    artifact_type TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    storage_path TEXT NOT NULL,
+    sha256 TEXT NOT NULL,
+    row_count BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_artifact_pipeline_run
+        FOREIGN KEY (pipeline_run_id)
+        REFERENCES pipeline_run(pipeline_run_id),
+    CONSTRAINT fk_artifact_agent_run
+        FOREIGN KEY (agent_run_id)
+        REFERENCES agent_run(agent_run_id),
+    CONSTRAINT ck_artifact_row_count_non_negative
+        CHECK (row_count >= 0),
+    CONSTRAINT ck_artifact_sha256_format
+        CHECK (sha256 ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT fk_artifact_agent_run_pipeline
+        FOREIGN KEY (pipeline_run_id, agent_run_id)
+        REFERENCES agent_run(pipeline_run_id, agent_run_id),
+    CONSTRAINT uq_artifact_run_type_path
+        UNIQUE (pipeline_run_id, artifact_type, storage_path)
 );
 
 COMMIT;

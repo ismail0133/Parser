@@ -3,17 +3,34 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Mapping, Sequence
+
+from src.cleaning.finding_cleaner import normalize_string
 
 
 APPLICATION_COLUMNS = (
     "auid", "code_app", "trigram", "application_name", "appsec", "business_line",
+    "vital", "continuity_level", "application_manager", "domain_manager",
+    "production_domain_manager", "production_manager",
+)
+APPLICATION_APM_COLUMNS = (
+    "trigram", "application_name", "appsec", "business_line", "vital",
+    "continuity_level", "application_manager", "domain_manager",
     "production_domain_manager", "production_manager",
 )
 SERVER_COLUMNS = (
     "hostname", "operating_system", "os_name", "os_version", "environment",
     "environment_detail", "sensitive", "authenticated_scan",
 )
+SERVER_APM_COLUMNS = (
+    "operating_system", "os_name", "os_version",
+)
+SERVER_FINDING_COLUMNS = (
+    "environment", "environment_detail", "sensitive", "authenticated_scan",
+)
+SERVER_SOURCE_APM = "apm"
+SERVER_SOURCE_FINDING = "finding"
 VULNERABILITY_COLUMNS = (
     "cve_code", "title", "description", "severity_level", "cvss_score",
 )
@@ -25,6 +42,10 @@ FINDING_COLUMNS = (
     "business_line", "proposed_action", "ownership", "false_positive",
     "false_positive_to_confirm", "eta", "strategy_type", "strategy_description",
     "solution_links", "source_payload",
+)
+ARTIFACT_COLUMNS = (
+    "artifact_type", "filename", "storage_path", "sha256",
+    "pipeline_run_id", "agent_run_id", "row_count",
 )
 KRI_RAS9_SQL = """
 WITH servers_by_hostname AS (
@@ -68,6 +89,17 @@ def _values(row: Mapping[str, Any], columns: Sequence[str]) -> tuple[Any, ...]:
 def _insert_sql(table: str, columns: Sequence[str], returning: str) -> str:
     placeholders = ", ".join(["%s"] * len(columns))
     return f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders}) RETURNING {returning}"
+
+
+def normalize_hostname(value: Any) -> str | None:
+    """Return the canonical hostname without changing its case."""
+    if not isinstance(value, str):
+        return None
+    return normalize_string(value)
+
+
+class ArtifactHashConflictError(ValueError):
+    """Raised when one run/type/path points to two different file contents."""
 
 
 class PostgresFindingRepository:
@@ -130,22 +162,139 @@ class PostgresFindingRepository:
         }
 
     def get_or_create_application(self, row: Mapping[str, Any]) -> Any:
+        """Insert or synchronize the official non-NULL APM Application values."""
         auid = row.get("auid")
         if auid is None:
             return self._insert("application", APPLICATION_COLUMNS, row, "application_id")
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT application_id FROM application WHERE auid = %s", (auid,))
+            cursor.execute(
+                f"SELECT application_id, {', '.join(APPLICATION_COLUMNS)} "
+                "FROM application WHERE auid = %s FOR UPDATE",
+                (auid,),
+            )
             found = cursor.fetchone()
             if found:
-                return found[0]
+                application_id = found[0]
+                existing = dict(zip(APPLICATION_COLUMNS, found[1:]))
+                columns_to_update: list[str] = []
+                for column in APPLICATION_APM_COLUMNS:
+                    incoming_value = row.get(column)
+                    existing_value = existing[column]
+                    if incoming_value is not None and existing_value != incoming_value:
+                        columns_to_update.append(column)
+                if columns_to_update:
+                    assignments = ", ".join(
+                        f"{column} = %s" for column in columns_to_update
+                    )
+                    cursor.execute(
+                        f"UPDATE application SET {assignments}, updated_at = CURRENT_TIMESTAMP "
+                        "WHERE application_id = %s",
+                        tuple(row.get(column) for column in columns_to_update)
+                        + (application_id,),
+                    )
+                return application_id
             cursor.execute(
                 _insert_sql("application", APPLICATION_COLUMNS, "application_id"),
                 _values(row, APPLICATION_COLUMNS),
             )
             return cursor.fetchone()[0]
 
-    def create_server(self, row: Mapping[str, Any]) -> Any:
-        return self._insert("server", SERVER_COLUMNS, row, "server_id")
+    def upsert_server(self, row: Mapping[str, Any], *, source: str) -> Any | None:
+        """Upsert one canonical Server according to the source ownership rules."""
+        if source not in {SERVER_SOURCE_APM, SERVER_SOURCE_FINDING}:
+            raise ValueError(f"Unsupported Server source: {source}")
+
+        hostname = normalize_hostname(row.get("hostname"))
+        if hostname is None:
+            return None
+
+        prepared = {column: None for column in SERVER_COLUMNS}
+        prepared["hostname"] = hostname
+        if source == SERVER_SOURCE_APM:
+            accepted_columns = SERVER_APM_COLUMNS
+        else:
+            accepted_columns = SERVER_APM_COLUMNS + SERVER_FINDING_COLUMNS
+        for column in accepted_columns:
+            prepared[column] = row.get(column)
+
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT server_id, {', '.join(SERVER_COLUMNS)} "
+                "FROM server WHERE hostname = %s FOR UPDATE",
+                (hostname,),
+            )
+            found = cursor.fetchone()
+            if not found:
+                placeholders = ", ".join(["%s"] * len(SERVER_COLUMNS))
+                cursor.execute(
+                    f"INSERT INTO server ({', '.join(SERVER_COLUMNS)}) "
+                    f"VALUES ({placeholders}) ON CONFLICT (hostname) DO NOTHING "
+                    "RETURNING server_id",
+                    _values(prepared, SERVER_COLUMNS),
+                )
+                inserted = cursor.fetchone()
+                if inserted:
+                    return inserted[0]
+                # Another transaction inserted the canonical hostname after our
+                # first SELECT. Lock that row and apply the same source policy.
+                cursor.execute(
+                    f"SELECT server_id, {', '.join(SERVER_COLUMNS)} "
+                    "FROM server WHERE hostname = %s FOR UPDATE",
+                    (hostname,),
+                )
+                found = cursor.fetchone()
+                if not found:
+                    raise RuntimeError(
+                        f"Server upsert could not resolve hostname: {hostname}"
+                    )
+
+            server_id = found[0]
+            existing = dict(zip(SERVER_COLUMNS, found[1:]))
+            columns_to_update: list[str] = []
+            if source == SERVER_SOURCE_APM:
+                # APM is authoritative for OS data and may replace stale values.
+                for column in SERVER_APM_COLUMNS:
+                    incoming_value = prepared[column]
+                    if incoming_value is not None and existing[column] != incoming_value:
+                        columns_to_update.append(column)
+            else:
+                # Finding OS data is only a fallback when APM has not populated it.
+                for column in SERVER_APM_COLUMNS:
+                    if existing[column] is None and prepared[column] is not None:
+                        columns_to_update.append(column)
+                for column in SERVER_FINDING_COLUMNS:
+                    incoming_value = prepared[column]
+                    if incoming_value is not None and existing[column] != incoming_value:
+                        columns_to_update.append(column)
+
+            if columns_to_update:
+                assignments = ", ".join(
+                    f"{column} = %s" for column in columns_to_update
+                )
+                cursor.execute(
+                    f"UPDATE server SET {assignments}, updated_at = CURRENT_TIMESTAMP "
+                    "WHERE server_id = %s",
+                    tuple(prepared[column] for column in columns_to_update)
+                    + (server_id,),
+                )
+            return server_id
+
+    def create_server(self, row: Mapping[str, Any]) -> Any | None:
+        """Backward-compatible Finding entry point for canonical Server upserts."""
+        return self.upsert_server(row, source=SERVER_SOURCE_FINDING)
+
+    def upsert_application_server_relation(
+        self, application_id: Any, server_id: Any,
+    ) -> None:
+        """Persist one canonical Application-Server pair idempotently."""
+        if application_id is None or server_id is None:
+            return
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO application_server_relation (application_id, server_id) "
+                "VALUES (%s, %s) ON CONFLICT (application_id, server_id) DO NOTHING",
+                (application_id, server_id),
+            )
 
     def get_or_create_vulnerability(self, row: Mapping[str, Any]) -> Any:
         cve = row.get("cve_code")
@@ -172,5 +321,63 @@ class PostgresFindingRepository:
         return self._insert("anomaly", columns, prepared, "anomaly_id")
 
     def insert_artifact(self, row: Mapping[str, Any]) -> Any:
-        columns = ("artifact_type", "filename", "storage_path", "sha256")
-        return self._insert("artifact", columns, row, "artifact_id")
+        """Insert one Artifact idempotently and reject content replacement."""
+        pipeline_run_id = row.get("pipeline_run_id")
+        if pipeline_run_id is None:
+            raise ValueError("artifact.pipeline_run_id is required")
+        for column in ("artifact_type", "filename", "storage_path", "sha256"):
+            value = row.get(column)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"artifact.{column} is required")
+        sha256 = row["sha256"]
+        if re.fullmatch(r"[0-9a-f]{64}", sha256) is None:
+            raise ValueError("artifact.sha256 must contain 64 lowercase hexadecimal characters")
+        row_count = row.get("row_count")
+        if row_count is not None and (
+            isinstance(row_count, bool) or not isinstance(row_count, int) or row_count < 0
+        ):
+            raise ValueError("artifact.row_count must be a non-negative integer or NULL")
+
+        key = (pipeline_run_id, row["artifact_type"], row["storage_path"])
+        select_sql = (
+            "SELECT artifact_id, sha256 FROM artifact "
+            "WHERE pipeline_run_id = %s AND artifact_type = %s AND storage_path = %s "
+            "FOR UPDATE"
+        )
+        with self.connection.cursor() as cursor:
+            cursor.execute(select_sql, key)
+            found = cursor.fetchone()
+            if found:
+                return self._resolve_existing_artifact(found, row)
+
+            placeholders = ", ".join(["%s"] * len(ARTIFACT_COLUMNS))
+            cursor.execute(
+                f"INSERT INTO artifact ({', '.join(ARTIFACT_COLUMNS)}) "
+                f"VALUES ({placeholders}) "
+                "ON CONFLICT (pipeline_run_id, artifact_type, storage_path) DO NOTHING "
+                "RETURNING artifact_id",
+                _values(row, ARTIFACT_COLUMNS),
+            )
+            inserted = cursor.fetchone()
+            if inserted:
+                return inserted[0]
+
+            # A concurrent transaction may have inserted the same logical path.
+            cursor.execute(select_sql, key)
+            found = cursor.fetchone()
+            if found:
+                return self._resolve_existing_artifact(found, row)
+            raise RuntimeError("Artifact upsert could not resolve the persisted row")
+
+    @staticmethod
+    def _resolve_existing_artifact(found: Sequence[Any], row: Mapping[str, Any]) -> Any:
+        artifact_id, existing_sha256 = found
+        if existing_sha256 != row["sha256"]:
+            raise ArtifactHashConflictError(
+                "ARTIFACT_HASH_CONFLICT: "
+                f"pipeline_run_id={row['pipeline_run_id']} "
+                f"artifact_type={row['artifact_type']} "
+                f"storage_path={row['storage_path']} "
+                f"existing_sha256={existing_sha256} incoming_sha256={row['sha256']}"
+            )
+        return artifact_id

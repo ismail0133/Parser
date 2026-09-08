@@ -6,10 +6,12 @@ from copy import deepcopy
 from typing import Any, Mapping
 
 from src.cleaning.finding_cleaner import normalize_string
+from src.models.server import ObjServer
 
 
 APPLICATION_FIELDS = (
     "auid", "code_app", "trigram", "application_name", "appsec", "business_line",
+    "vital", "continuity_level", "application_manager", "domain_manager",
     "production_domain_manager", "production_manager",
 )
 
@@ -29,9 +31,36 @@ def map_obj_application(payload: Mapping[str, Any]) -> dict[str, Any]:
     auid = normalize_string(payload.get("auid"))
     if auid is None:
         raise ValueError("obj_application.auid is required")
-    return {
+    application = {
         field: auid.upper() if field == "auid" else payload.get(field)
         for field in APPLICATION_FIELDS
+    }
+    application["application_name"] = payload.get("name")
+    if application["application_name"] is None:
+        application["application_name"] = payload.get("application_name")
+    return application
+
+
+def map_obj_server(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Map one canonical APM ObjServer to the PostgreSQL Server contract."""
+    if not isinstance(payload, Mapping):
+        raise ValueError("obj_server must be a JSON object")
+    hostname = normalize_string(payload.get("hostname"))
+    if hostname is None:
+        raise ValueError("MISSING_SERVER_HOSTNAME")
+    normalized_payload = dict(payload)
+    normalized_payload["hostname"] = hostname
+    server = ObjServer.model_validate(normalized_payload)
+    return {
+        "hostname": hostname,
+        "operating_system": normalize_string(server.operating_system),
+        "os_name": normalize_string(server.os_name),
+        "os_version": normalize_string(server.os_version),
+        "environment": normalize_string(server.environment),
+        # These fields remain owned by enriched Findings, not by APM Server.
+        "environment_detail": None,
+        "sensitive": None,
+        "authenticated_scan": None,
     }
 
 
@@ -45,12 +74,9 @@ def map_obj_finding(payload: Mapping[str, Any]) -> dict[str, Any]:
     cve_detail = _object(source.get("cve_detail"), "cve_detail")
     strategy = _object(source.get("remediation_strategy"), "remediation_strategy")
 
-    hostname = source.get("hostname")
+    hostname = normalize_string(source.get("hostname"))
     server_row = None
-    if hostname is not None or any(server.get(key) is not None for key in (
-        "os_name", "os_version", "environment", "environment_detail",
-        "sensitive", "authenticated_scan",
-    )):
+    if hostname is not None:
         server_row = {
             "hostname": hostname,
             "operating_system": None,
