@@ -73,14 +73,10 @@ HAVING TRIM(hostname) = ''
 Relance ton loader avec tous les fichiers :
 
 ```bash
-python scripts/load_obj_findings_to_postgres.py `
-  --applications output/obj_applications.jsonl `
-  --findings output/obj_findings_enriched.jsonl `
-  --servers output/obj_servers.jsonl `
-  --application-server-relations output/application_server_relations.jsonl `
-  --parser-result output/PARSER-Result-XXXX.json `
-  --parser-anomalies output/parser_anomalies.json
-```
+python scripts/load_obj_findings_to_postgres.py --applications output/obj_applications.jsonl --findings output/obj_findings_enriched.jsonl --servers output/obj_servers.jsonl --application-server-relations output/application_server_relations.jsonl --parser-result output/PARSER-Result-20260908-213424.json --parser-anomalies output/parser_anomalies.json
+
+
+python scripts/load_obj_findings_to_postgres.py --applications output/obj_applications.jsonl --findings output/obj_findings.jsonl --servers output/obj_servers.jsonl --application-server-relations output/application_server_relations.jsonl --parser-result output/PARSER-Result-20260908-213424.json --parser-anomalies output/parser_anomalies.json
 
 Adapte les chemins selon ton dossier.
 
