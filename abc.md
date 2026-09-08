@@ -321,3 +321,74 @@ SELECT
 FROM finding AS f
 JOIN server AS s
     ON s.server_id = f.server_id;
+
+
+
+    SELECT
+    pipeline_run_id,
+    started_at,
+    run_status,
+    source_filename,
+    input_rows,
+    output_findings
+FROM pipeline_run
+ORDER BY started_at DESC;
+
+
+
+SELECT
+    pipeline_run_id,
+    COUNT(*) AS nb_findings
+FROM finding
+GROUP BY pipeline_run_id
+ORDER BY nb_findings DESC;
+
+
+
+WITH servers_by_hostname AS (
+    SELECT
+        BTRIM(s.hostname) AS hostname,
+
+        BOOL_OR(
+            s.sensitive IS TRUE
+            AND s.authenticated_scan IS TRUE
+        ) AS eligible,
+
+        BOOL_OR(
+            LOWER(f.severity_level) IN ('critical', 'very high')
+            AND f.overdue IS TRUE
+            AND f.false_positive IS NOT TRUE
+        ) AS qualifying
+
+    FROM finding AS f
+    JOIN server AS s
+        ON s.server_id = f.server_id
+
+    WHERE f.pipeline_run_id = 'TON_UUID_ICI'::uuid
+      AND s.hostname IS NOT NULL
+      AND BTRIM(s.hostname) <> ''
+
+    GROUP BY BTRIM(s.hostname)
+),
+
+counts AS (
+    SELECT
+        COUNT(*) FILTER (
+            WHERE eligible AND qualifying
+        ) AS numerator,
+
+        COUNT(*) FILTER (
+            WHERE eligible
+        ) AS denominator
+
+    FROM servers_by_hostname
+)
+
+SELECT
+    numerator,
+    denominator,
+    ROUND(
+        100.0 * numerator / NULLIF(denominator, 0),
+        4
+    ) AS kri_percentage
+FROM counts;
