@@ -458,3 +458,44 @@ GROUP BY
     v.severity_level
 ORDER BY nb_findings DESC
 LIMIT 10;
+
+SELECT
+    application_id,
+    auid,
+    application_name
+FROM application
+LIMIT 20;
+
+SELECT column_name, table_name
+FROM information_schema.columns
+WHERE column_name ILIKE '%app%'
+   OR column_name ILIKE '%application%'
+   OR column_name ILIKE '%name%';
+
+
+   UPDATE application a
+SET application_name = r.application_name
+FROM raw_findings r
+WHERE a.auid = r.auid
+  AND r.application_name IS NOT NULL;
+
+
+  COALESCE(a.application_name, 'Nom application non renseigné') AS application_name
+
+  SELECT
+    f.finding_id,
+    a.auid,
+    COALESCE(a.application_name, 'Nom application non renseigné') AS application_name,
+    s.hostname,
+    v.cve_code,
+    f.severity_level,
+    f.overdue,
+    f.proposed_action,
+    f.strategy_description
+FROM finding AS f
+LEFT JOIN application AS a
+    ON f.application_id = a.application_id
+LEFT JOIN server AS s
+    ON f.server_id = s.server_id
+LEFT JOIN vulnerability AS v
+    ON f.vulnerability_id = v.vulnerability_id;
