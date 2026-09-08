@@ -1,271 +1,165 @@
-Tu es encore sur la **même erreur** :
+Oui, là c’est **bon signe** ✅
+
+Ton loader est passé jusqu’au bout et il affiche :
 
 ```text
-ON CONFLICT (hostname)
+status: READY
+mapping_errors: 0
+warnings: 0
+Pipeline run: 3511de6f-682b-4d7c-8ea1-74f623c3ca20
 ```
 
-mais PostgreSQL n’a toujours pas l’index/contrainte unique sur `server.hostname`.
+Ça veut dire que le chargement est cohérent côté mapping et que PostgreSQL a accepté le run.
 
-Donc la migration `003_server_dimension.sql` **n’a pas été appliquée correctement** sur ta base.
+Maintenant fais les requêtes de vérification finales dans pgAdmin.
 
-Fais exactement ça dans **pgAdmin**, pas dans VS Code.
-
-### 1. Vérifie d’abord si l’index unique existe
+### 1. Vérifier le pipeline run
 
 ```sql
 SELECT
-    indexname,
-    indexdef
-FROM pg_indexes
-WHERE tablename = 'server';
+    pipeline_run_id,
+    run_status,
+    source_filename,
+    input_rows,
+    output_findings,
+    error_count,
+    warning_count,
+    started_at,
+    ended_at
+FROM pipeline_run
+ORDER BY started_at DESC
+LIMIT 5;
 ```
 
-Si tu ne vois pas un index unique sur `hostname`, c’est pour ça que le loader plante.
-
-### 2. Nettoie les 4 anciens serveurs invalides si non référencés
-
-Lance :
-
-```sql
-SELECT
-    s.server_id,
-    s.hostname,
-    COUNT(f.finding_id) AS linked_findings
-FROM server AS s
-LEFT JOIN finding AS f
-    ON f.server_id = s.server_id
-WHERE s.hostname IS NULL
-   OR BTRIM(s.hostname) = ''
-GROUP BY s.server_id, s.hostname;
-```
-
-Si `linked_findings = 0`, supprime-les :
-
-```sql
-DELETE FROM server
-WHERE (hostname IS NULL OR BTRIM(hostname) = '')
-  AND server_id NOT IN (
-      SELECT DISTINCT server_id
-      FROM finding
-      WHERE server_id IS NOT NULL
-  );
-```
-
-### 3. Vérifie les doublons hostname
-
-```sql
-SELECT
-    BTRIM(hostname) AS normalized_hostname,
-    ARRAY_AGG(server_id ORDER BY server_id) AS server_ids,
-    COUNT(*) AS server_count
-FROM server
-WHERE hostname IS NOT NULL
-  AND BTRIM(hostname) <> ''
-GROUP BY BTRIM(hostname)
-HAVING COUNT(*) > 1;
-```
-
-Si ça ne retourne rien, c’est bon.
-
-### 4. Crée l’index unique manuellement
-
-Comme le code fait `ON CONFLICT (hostname)`, il faut ça :
-
-```sql
-CREATE UNIQUE INDEX IF NOT EXISTS ux_server_hostname
-ON server (hostname);
-```
-
-Puis vérifie :
-
-```sql
-SELECT
-    indexname,
-    indexdef
-FROM pg_indexes
-WHERE tablename = 'server';
-```
-
-### 5. Relance ta commande Python
-
-```powershell
-python scripts/load_obj_findings_to_postgres.py --applications output/obj_applications.jsonl --findings output/obj_findings.jsonl --servers output/obj_servers.jsonl --application-server-relations output/application_server_relations.jsonl --parser-result output/PARSER-Result-20260908-213424.json --parser-anomalies output/parser_anomalies.json
-```
-
-Le point clé : **tant que l’index unique sur `server(hostname)` n’existe pas dans PostgreSQL, ton `ON CONFLICT (hostname)` plantera toujours.**
-
-
-
-
-Oui, là on voit le problème clairement.
-
-Tu as seulement :
+Tu dois retrouver :
 
 ```text
-server_pkey = UNIQUE sur server_id
-idx_server_hostname = index simple sur hostname
+3511de6f-682b-4d7c-8ea1-74f623c3ca20
 ```
 
-Mais il manque un **UNIQUE** sur `hostname`.
+---
 
-Ton code fait sûrement :
+### 2. Vérifier les findings chargés
 
 ```sql
-ON CONFLICT (hostname)
+SELECT COUNT(*) AS total_findings
+FROM finding
+WHERE pipeline_run_id = '3511de6f-682b-4d7c-8ea1-74f623c3ca20';
 ```
 
-Donc PostgreSQL exige une contrainte unique ou un index unique sur `hostname`.
+Tu dois avoir environ :
 
-## Fais ça dans pgAdmin
+```text
+47976
+```
 
-### 1. Vérifie d’abord les hostnames invalides
+---
+
+### 3. Vérifier Application
+
+```sql
+SELECT
+    COUNT(*) AS total,
+    COUNT(*) FILTER (WHERE application_name IS NULL) AS sans_nom,
+    COUNT(*) FILTER (WHERE application_name IS NOT NULL) AS avec_nom
+FROM application;
+```
+
+Puis :
+
+```sql
+SELECT
+    application_id,
+    auid,
+    application_name,
+    vital,
+    continuity_level,
+    application_manager,
+    domain_manager
+FROM application
+LIMIT 20;
+```
+
+---
+
+### 4. Vérifier Server
+
+```sql
+SELECT
+    COUNT(*) AS total_servers,
+    COUNT(*) FILTER (WHERE operating_system IS NULL) AS sans_os,
+    COUNT(*) FILTER (WHERE operating_system IS NOT NULL) AS avec_os
+FROM server;
+```
+
+Puis :
 
 ```sql
 SELECT
     server_id,
-    hostname
-FROM server
-WHERE hostname IS NULL
-   OR BTRIM(hostname) = '';
-```
-
-S’il y a des lignes et qu’elles ne sont pas liées à des findings, supprime-les :
-
-```sql
-DELETE FROM server
-WHERE (hostname IS NULL OR BTRIM(hostname) = '')
-  AND server_id NOT IN (
-      SELECT DISTINCT server_id
-      FROM finding
-      WHERE server_id IS NOT NULL
-  );
-```
-
----
-
-### 2. Vérifie les doublons exacts
-
-```sql
-SELECT
     hostname,
-    COUNT(*) AS total,
-    ARRAY_AGG(server_id ORDER BY server_id) AS server_ids
+    operating_system,
+    os_name,
+    os_version,
+    environment,
+    environment_detail
 FROM server
-WHERE hostname IS NOT NULL
-  AND BTRIM(hostname) <> ''
-GROUP BY hostname
-HAVING COUNT(*) > 1;
-```
-
-Si ça ne retourne rien, tu peux passer à l’étape suivante.
-
----
-
-### 3. Crée la contrainte unique
-
-```sql
-ALTER TABLE server
-ADD CONSTRAINT uq_server_hostname UNIQUE (hostname);
-```
-
-Si ça marche, vérifie :
-
-```sql
-SELECT
-    indexname,
-    indexdef
-FROM pg_indexes
-WHERE tablename = 'server';
-```
-
-Tu dois voir quelque chose comme :
-
-```text
-uq_server_hostname UNIQUE
+LIMIT 20;
 ```
 
 ---
 
-### 4. Relance le loader
-
-```powershell
-python scripts/load_obj_findings_to_postgres.py --applications output/obj_applications.jsonl --findings output/obj_findings.jsonl --servers output/obj_servers.jsonl --application-server-relations output/application_server_relations.jsonl --parser-result output/PARSER-Result-20260908-213424.json --parser-anomalies output/parser_anomalies.json
-```
-
-Ton `idx_server_hostname` actuel n’est pas suffisant : c’est un index normal. Il faut vraiment `UNIQUE`.
-
-
-L’erreur veut dire simplement :
-
-```text
-application_server_relation n’existe pas encore
-```
-
-Donc dans ton `TRUNCATE`, tu as mis une table qui n’a pas encore été créée par la migration `003`.
-
-Ce n’est pas grave. Utilise cette commande avec **IF EXISTS** :
+### 5. Vérifier relations Application–Server
 
 ```sql
-TRUNCATE TABLE
-    artifact,
-    anomaly,
-    finding,
-    server,
-    vulnerability,
-    application,
-    agent_run,
-    agent,
-    pipeline_run
-RESTART IDENTITY CASCADE;
+SELECT COUNT(*) AS total_relations
+FROM application_server_relation;
 ```
 
-Comme `application_server_relation` n’existe pas encore, ne la mets pas pour l’instant.
-
-Ensuite fais dans l’ordre :
-
-### 1. Exécuter la migration Server
-
-Ouvre et exécute :
-
-```text
-database/003_server_dimension.sql
-```
-
-Après ça, la table `application_server_relation` doit exister.
-
-Vérifie :
-
-```sql
-SELECT table_name
-FROM information_schema.tables
-WHERE table_schema = 'public'
-  AND table_name = 'application_server_relation';
-```
-
-### 2. Exécuter la migration Artifact
-
-Ouvre et exécute :
-
-```text
-database/004_artifact_traceability.sql
-```
-
-### 3. Vérifier l’index unique server
+Puis :
 
 ```sql
 SELECT
-    indexname,
-    indexdef
-FROM pg_indexes
-WHERE tablename = 'server';
+    a.auid,
+    a.application_name,
+    s.hostname,
+    s.operating_system
+FROM application_server_relation r
+JOIN application a
+    ON a.application_id = r.application_id
+JOIN server s
+    ON s.server_id = r.server_id
+LIMIT 20;
 ```
 
-Tu dois voir un `UNIQUE` sur `hostname`.
+---
 
-### 4. Relancer le loader
+### 6. Vérifier anomalies
 
-```powershell
-python scripts/load_obj_findings_to_postgres.py --applications output/obj_applications.jsonl --findings output/obj_findings.jsonl --servers output/obj_servers.jsonl --application-server-relations output/application_server_relations.jsonl --parser-result output/PARSER-Result-20260908-213424.json --parser-anomalies output/parser_anomalies.json
+```sql
+SELECT
+    anomaly_level,
+    code,
+    COUNT(*) AS total
+FROM anomaly
+GROUP BY anomaly_level, code
+ORDER BY total DESC;
 ```
 
-Donc là, ton erreur vient juste du fait que tu as essayé de vider une table qui n’existe pas encore. D’abord tu vides les tables existantes, puis tu exécutes `003`, puis `004`.
+---
+
+### 7. Vérifier artifacts
+
+```sql
+SELECT
+    artifact_type,
+    filename,
+    row_count,
+    pipeline_run_id,
+    agent_run_id
+FROM artifact
+WHERE pipeline_run_id = '3511de6f-682b-4d7c-8ea1-74f623c3ca20'
+ORDER BY artifact_type;
+```
+
+Si ces requêtes sont bonnes, tu peux dire que ton pipeline PostgreSQL fonctionne réellement.
