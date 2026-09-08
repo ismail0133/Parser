@@ -239,11 +239,34 @@ def test_server_ddl_defines_canonical_hostname_and_application_relation():
     assert "PRIMARY KEY (application_id, server_id)" in relation_table
 
 
-def test_server_migration_rejects_legacy_conflicts_without_deleting_rows():
+def test_server_migration_deletes_only_unreferenced_invalid_rows():
     migration = Path("database/003_server_dimension.sql").read_text(encoding="utf-8")
 
-    assert "SERVER_MIGRATION_INVALID_HOSTNAME" in migration
-    assert "SERVER_MIGRATION_DUPLICATE_HOSTNAME" in migration
     assert "CREATE TABLE IF NOT EXISTS application_server_relation" in migration
+    assert "DELETE FROM server AS s" in migration
+    assert "WHERE f.server_id = s.server_id" in migration
+    assert "WHERE relation.server_id = s.server_id" in migration
+    assert "RETURNING s.server_id, s.hostname, s.created_at, s.updated_at" in migration
+
+
+def test_server_migration_diagnoses_and_blocks_referenced_invalid_rows():
+    migration = Path("database/003_server_dimension.sql").read_text(encoding="utf-8")
+
+    assert "s.server_id" in migration
+    assert "s.hostname" in migration
+    assert "COUNT(DISTINCT f.finding_id) AS linked_findings" in migration
+    assert "s.created_at" in migration
+    assert "s.updated_at" in migration
+    assert "SERVER_MIGRATION_INVALID_HOSTNAME_REFERENCED" in migration
+    assert "linked_application_relations" in migration
+    assert "Assign a verified hostname or explicitly detach" in migration
+
+
+def test_server_migration_diagnoses_trimmed_duplicates_before_uniqueness():
+    migration = Path("database/003_server_dimension.sql").read_text(encoding="utf-8")
+
+    assert "BTRIM(hostname) AS normalized_hostname" in migration
+    assert "HAVING COUNT(*) > 1" in migration
+    assert "SERVER_MIGRATION_DUPLICATE_HOSTNAME" in migration
+    assert "server_ids=[%s]" in migration
     assert "CREATE UNIQUE INDEX IF NOT EXISTS uq_server_hostname" in migration
-    assert "DELETE FROM" not in migration.upper()
