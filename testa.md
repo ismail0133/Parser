@@ -451,4 +451,4 @@ Tu peux dire :
 **Cette étape valide que la couche PostgreSQL est prête pour l’industrialisation, car elle centralise les données métier, les données techniques et la traçabilité du pipeline dans un modèle relationnel contrôlé.**
 
 
-Select-String -Path .\output\parser_anomalies.json -Pattern "ERROR|SERVER|server" -Context 2,4
+python -c "import json; data=json.load(open('output/parser_anomalies.json', encoding='utf-8')); [print(a) for a in data if a.get('severity')=='ERROR']"
