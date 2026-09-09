@@ -452,3 +452,7 @@ Tu peux dire :
 
 
 python -c "import json; data=json.load(open('output/parser_anomalies.json', encoding='utf-8')); [print(a) for a in data if a.get('severity')=='ERROR']"
+
+python -c "import pandas as pd; df=pd.read_csv('data/finding_list_fixed.csv'); print('len=', len(df)); print(df.tail(3).to_string())"
+
+python -c "import pandas as pd; df=pd.read_csv('data/finding_list_fixed.csv'); print(df.iloc[47976].to_string())"
