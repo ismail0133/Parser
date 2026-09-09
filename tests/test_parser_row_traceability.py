@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from main import write_outputs
-from src.cleaning.finding_cleaner import is_empty_source_row
+from src.cleaning.finding_cleaner import is_empty_source_row, is_export_footer_row
 from src.loaders.finding_loader import EXPECTED_COLUMNS
 from src.parser import parse_findings
 from tests.conftest import synthetic_row
@@ -14,10 +14,27 @@ def empty_source_row(value=""):
     return {column: value for column in EXPECTED_COLUMNS}
 
 
+def footer_row(text):
+    row = empty_source_row()
+    row["Month"] = text
+    return row
+
+
 def test_empty_source_row_accepts_only_missing_or_blank_cells():
     assert is_empty_source_row(pd.Series([None, pd.NA, float("nan"), "", "   "]))
     assert not is_empty_source_row(pd.Series(["", "N/A"]))
     assert not is_empty_source_row(pd.Series(["", 0]))
+
+
+def test_export_footer_row_requires_filter_text_without_finding_identity():
+    assert is_export_footer_row(pd.Series(footer_row("Filtres appliqués")))
+    assert is_export_footer_row(pd.Series(footer_row("IT Sub Cluster est 2S IT HVP")))
+    assert is_export_footer_row(pd.Series(footer_row(
+        "Filtres appliqués\n"
+        "IT Sub Cluster est 2S IT HVP\n"
+        "Application Status est In Production"
+    )))
+    assert not is_export_footer_row(pd.Series(synthetic_row()))
 
 
 @pytest.mark.parametrize("empty_value", ["", "   "])
@@ -32,6 +49,84 @@ def test_fully_empty_final_csv_row_is_ignored(csv_factory, empty_value):
     assert stats["output_findings"] == 1
     assert not any(anomaly.row_index == 1 for anomaly in anomalies)
     assert len(findings) == 1
+
+
+def test_excel_filter_footer_rows_are_ignored_without_business_errors(csv_factory):
+    footer_texts = [
+        "Filtres appliqués",
+        "IT Sub Cluster est 2S IT HVP",
+        "Production Domain Manager est Yosra BATNINI",
+        "REPORTDATE est 30/07/2026 00:00:00",
+        "PROPOSED_ACTION n'est pas False positive",
+        "Application Status est In Production",
+    ]
+    path = csv_factory([synthetic_row()] + [footer_row(text) for text in footer_texts])
+
+    findings, anomalies, stats = parse_findings(path)
+
+    assert stats["input_rows"] == 7
+    assert stats["ignored_empty_rows"] == 0
+    assert stats["ignored_footer_rows"] == 6
+    assert stats["analyzed_rows"] == 1
+    assert stats["output_findings"] == 1
+    assert len(findings) == 1
+    assert all(finding.unique_id is not None for finding in findings)
+    footer_indexes = set(range(1, 7))
+    assert not any(
+        anomaly.row_index in footer_indexes
+        and anomaly.error_type in {
+            "INVALID_DATE",
+            "MISSING_REQUIRED_VALUE",
+            "INVALID_CVE",
+            "INVALID_OR_MISSING_AUID",
+        }
+        for anomaly in anomalies
+    )
+
+
+def test_multiline_excel_filter_footer_creates_no_finding(csv_factory):
+    footer = "\n".join([
+        "Filtres appliqués",
+        "IT Sub Cluster est 2S IT HVP",
+        "Production Domain Manager est Yosra BATNINI",
+        "REPORTDATE est 30/07/2026 00:00:00",
+        "PROPOSED_ACTION n'est pas False positive",
+        "Application Status est In Production",
+    ])
+    path = csv_factory([synthetic_row(), footer_row(footer)])
+
+    findings, anomalies, stats = parse_findings(path)
+
+    assert stats["input_rows"] == 2
+    assert stats["ignored_footer_rows"] == 1
+    assert stats["analyzed_rows"] == 1
+    assert stats["output_findings"] == 1
+    assert len(findings) == 1
+    assert not any(anomaly.row_index == 1 for anomaly in anomalies)
+
+
+def test_partial_business_row_before_footer_remains_analyzed(csv_factory):
+    partial = empty_source_row()
+    partial["title"] = "Incomplete business vulnerability"
+    path = csv_factory([
+        synthetic_row(),
+        partial,
+        footer_row("Filtres appliqués"),
+        footer_row("Application Status est In Production"),
+    ])
+
+    findings, anomalies, stats = parse_findings(path)
+
+    assert stats["input_rows"] == 4
+    assert stats["ignored_footer_rows"] == 2
+    assert stats["analyzed_rows"] == 2
+    assert stats["output_findings"] == 2
+    assert any(
+        anomaly.row_index == 1
+        and anomaly.severity == "ERROR"
+        and anomaly.error_type == "INVALID_OR_MISSING_AUID"
+        for anomaly in anomalies
+    )
 
 
 @pytest.mark.parametrize(
@@ -125,4 +220,3 @@ def test_parser_anomalies_json_contains_both_row_coordinates(csv_factory, tmp_pa
 
     assert cve_error["row_index"] == 0
     assert cve_error["source_row_number"] == 2
-

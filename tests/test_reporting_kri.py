@@ -34,7 +34,10 @@ def test_findings_json_and_markdown_exports(csv_factory, tmp_path):
     markdown = paths["analysis_markdown"].read_text(encoding="utf-8")
     assert finding_data[0]["first_detection"] == "2026-05-01"
     assert analysis["data_quality"]["output_findings"] == len(finding_data)
+    assert analysis["run_information"]["ignored_footer_rows"] == 0
+    assert analysis["data_quality"]["ignored_footer_rows"] == 0
     assert f"| Output Findings | {len(finding_data)} |" in markdown
+    assert "| Ignored Footer Rows | 0 |" in markdown
     assert "# Parser Finding Analysis" in markdown
 
 

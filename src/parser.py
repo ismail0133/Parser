@@ -16,6 +16,7 @@ from src.calculations.finding_calculations import (
 )
 from src.cleaning.finding_cleaner import (
     clean_findings,
+    export_footer_row_mask,
     is_empty_source_row,
     normalize_string,
 )
@@ -341,8 +342,11 @@ def parse_findings(path: str | Path, application_lookup: ApplicationLookup | Non
     source_frame = load_findings(path, limit=limit)
     input_rows = len(source_frame)
     empty_row_mask = source_frame.apply(is_empty_source_row, axis=1)
+    footer_row_mask = export_footer_row_mask(source_frame)
     ignored_empty_rows = int(empty_row_mask.sum())
-    frame = clean_findings(source_frame.loc[~empty_row_mask].copy())
+    ignored_footer_rows = int((footer_row_mask & ~empty_row_mask).sum())
+    ignored_row_mask = empty_row_mask | footer_row_mask
+    frame = clean_findings(source_frame.loc[~ignored_row_mask].copy())
     findings: list[Finding] = []
     anomalies: list[Anomaly] = []
     kri_evaluations: list[dict[str, Any]] = []
@@ -381,6 +385,7 @@ def parse_findings(path: str | Path, application_lookup: ApplicationLookup | Non
         "input_rows": input_rows,
         "analyzed_rows": len(frame),
         "ignored_empty_rows": ignored_empty_rows,
+        "ignored_footer_rows": ignored_footer_rows,
         "input_columns": len(EXPECTED_COLUMNS),
         "parsed_successfully": len(frame) - len(rows_with_errors) - len(rows_with_warnings - rows_with_errors),
         "parsed_with_warnings": len(rows_with_warnings),
