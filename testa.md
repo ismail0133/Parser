@@ -449,3 +449,6 @@ Tu peux dire :
 À la fin, tu peux dire :
 
 **Cette étape valide que la couche PostgreSQL est prête pour l’industrialisation, car elle centralise les données métier, les données techniques et la traçabilité du pipeline dans un modèle relationnel contrôlé.**
+
+
+Select-String -Path .\output\parser_anomalies.json -Pattern "ERROR|SERVER|server" -Context 2,4
