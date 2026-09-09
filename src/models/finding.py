@@ -65,6 +65,7 @@ class Finding(BaseModel):
 
 class Anomaly(BaseModel):
     row_index: int
+    source_row_number: int | None = None
     rem_key_id: str | None = None
     field: str
     value: Any = None

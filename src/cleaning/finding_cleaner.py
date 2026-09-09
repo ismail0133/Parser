@@ -6,6 +6,17 @@ import pandas as pd
 NULL_STRINGS = {"", "null", "n/a"}
 
 
+def is_empty_source_row(row: pd.Series) -> bool:
+    """Return True only when every RAW cell is missing or blank after trim."""
+    for value in row:
+        if value is None or value is pd.NA or bool(pd.isna(value)):
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        return False
+    return True
+
+
 def normalize_string(value: Any) -> str | None:
     if value is None or value is pd.NA or bool(pd.isna(value)):
         return None

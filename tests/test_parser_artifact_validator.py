@@ -270,3 +270,15 @@ def test_mapper_defaults_pipeline_and_agent_ids_and_forces_finding_id_to_none():
     assert row["pipeline_run_id"] is None
     assert row["agent_run_id"] is None
     assert row["finding_id"] is None
+
+
+def test_mapper_persists_source_row_number_when_parser_provides_it():
+    anomaly = Anomaly.model_validate(anomaly_payload(
+        row_index=0,
+        source_row_number=2,
+    ))
+
+    row = map_anomaly_to_sql(anomaly)
+
+    assert row["details"]["row_index"] == 0
+    assert row["details"]["source_row_number"] == 2

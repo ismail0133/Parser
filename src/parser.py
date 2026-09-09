@@ -14,7 +14,11 @@ from src.calculations.finding_calculations import (
     calculate_sla,
     parse_source_kri,
 )
-from src.cleaning.finding_cleaner import clean_findings, normalize_string
+from src.cleaning.finding_cleaner import (
+    clean_findings,
+    is_empty_source_row,
+    normalize_string,
+)
 from src.enrichment.application_enricher import ApplicationLookup, enrich_with_application
 from src.loaders.finding_loader import EXPECTED_COLUMNS, load_findings
 from src.mapping.finding_mapper import map_direct_fields
@@ -41,9 +45,17 @@ MONTHS = {
 
 def _anomaly(row_index: int, rem_key_id: str | None, field: str, value: Any,
              severity: str, error_type: str, message: str) -> Anomaly:
-    return Anomaly(row_index=row_index, rem_key_id=rem_key_id, field=field,
-                   value=value, severity=severity, error_type=error_type, message=message,
-                   classification=classify_anomaly(severity, error_type))
+    return Anomaly(
+        row_index=row_index,
+        source_row_number=row_index + 2,
+        rem_key_id=rem_key_id,
+        field=field,
+        value=value,
+        severity=severity,
+        error_type=error_type,
+        message=message,
+        classification=classify_anomaly(severity, error_type),
+    )
 
 
 def normalize_as_of_date(value: Any, current_date: date) -> tuple[date | None, bool]:
@@ -251,11 +263,11 @@ def _parse_row(row_index: int, row: dict[str, Any], application_lookup: Applicat
 
 
 def _validate_server_kri_sources(
-    frame: pd.DataFrame, findings: list[Finding], parsed_row_positions: list[int]
+    frame: pd.DataFrame, findings: list[Finding], parsed_row_indexes: list[int]
 ) -> tuple[list[Anomaly], dict[str, Any]]:
     server_rows: dict[str, list[tuple[int, Any, Finding]]] = {}
-    for finding, row_index in zip(findings, parsed_row_positions):
-        row = frame.iloc[row_index - 1]
+    for finding, row_index in zip(findings, parsed_row_indexes):
+        row = frame.loc[row_index]
         if finding.hostname:
             server_rows.setdefault(finding.hostname, []).append(
                 (row_index, row.get("KRI RAS 9"), finding)
@@ -326,37 +338,49 @@ def _validate_server_kri_sources(
 def parse_findings(path: str | Path, application_lookup: ApplicationLookup | None = None,
                    limit: int | None = None) -> tuple[list[Finding], list[Anomaly], dict[str, Any]]:
     started = time.perf_counter()
-    frame = clean_findings(load_findings(path, limit=limit))
+    source_frame = load_findings(path, limit=limit)
+    input_rows = len(source_frame)
+    empty_row_mask = source_frame.apply(is_empty_source_row, axis=1)
+    ignored_empty_rows = int(empty_row_mask.sum())
+    frame = clean_findings(source_frame.loc[~empty_row_mask].copy())
     findings: list[Finding] = []
     anomalies: list[Anomaly] = []
     kri_evaluations: list[dict[str, Any]] = []
-    parsed_row_positions: list[int] = []
+    parsed_row_indexes: list[int] = []
     rows_with_warnings: set[int] = set()
     rows_with_errors: set[int] = set()
-    for position, (_, series) in enumerate(frame.iterrows(), start=1):
+    for pandas_index, series in frame.iterrows():
+        row_index = int(pandas_index)
         try:
-            finding, row_anomalies, kri = _parse_row(position, series.to_dict(), application_lookup, date.today())
+            finding, row_anomalies, kri = _parse_row(
+                row_index,
+                series.to_dict(),
+                application_lookup,
+                date.today(),
+            )
             findings.append(finding)
-            parsed_row_positions.append(position)
+            parsed_row_indexes.append(row_index)
             kri_evaluations.append(kri)
             anomalies.extend(row_anomalies)
             if any(item.severity == "WARNING" for item in row_anomalies):
-                rows_with_warnings.add(position)
+                rows_with_warnings.add(row_index)
             if any(item.severity == "ERROR" for item in row_anomalies):
-                rows_with_errors.add(position)
+                rows_with_errors.add(row_index)
         except Exception as exc:  # keep one malformed row from stopping the batch
-            anomalies.append(_anomaly(position, normalize_string(series.get("REM_KEY_ID")), "row", None,
+            anomalies.append(_anomaly(row_index, normalize_string(series.get("REM_KEY_ID")), "row", None,
                                       "ERROR", "ROW_BUILD_ERROR", str(exc)))
-            rows_with_errors.add(position)
+            rows_with_errors.add(row_index)
     server_kri_anomalies, server_kri_control = _validate_server_kri_sources(
-        frame, findings, parsed_row_positions
+        frame, findings, parsed_row_indexes
     )
     anomalies.extend(server_kri_anomalies)
     rows_with_warnings.update(item.row_index for item in server_kri_anomalies)
     counts = {severity: sum(item.severity == severity for item in anomalies)
               for severity in ("INFO", "WARNING", "ERROR")}
     stats = {
-        "input_rows": len(frame),
+        "input_rows": input_rows,
+        "analyzed_rows": len(frame),
+        "ignored_empty_rows": ignored_empty_rows,
         "input_columns": len(EXPECTED_COLUMNS),
         "parsed_successfully": len(frame) - len(rows_with_errors) - len(rows_with_warnings - rows_with_errors),
         "parsed_with_warnings": len(rows_with_warnings),

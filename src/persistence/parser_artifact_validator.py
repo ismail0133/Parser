@@ -174,6 +174,15 @@ def map_anomaly_to_sql(
 ) -> dict[str, Any]:
     """Map a Parser Anomaly; Parser artifacts cannot resolve a finding foreign key."""
     serialized = anomaly.model_dump(mode="json")
+    details = {
+        "row_index": serialized["row_index"],
+        "rem_key_id": serialized["rem_key_id"],
+        "field": serialized["field"],
+        "value": serialized["value"],
+        "classification": serialized["classification"],
+    }
+    if serialized["source_row_number"] is not None:
+        details["source_row_number"] = serialized["source_row_number"]
     return {
         "pipeline_run_id": pipeline_run_id,
         "agent_run_id": agent_run_id,
@@ -181,11 +190,5 @@ def map_anomaly_to_sql(
         "anomaly_level": anomaly.severity,
         "code": anomaly.error_type,
         "message": anomaly.message,
-        "details": {
-            "row_index": serialized["row_index"],
-            "rem_key_id": serialized["rem_key_id"],
-            "field": serialized["field"],
-            "value": serialized["value"],
-            "classification": serialized["classification"],
-        },
+        "details": details,
     }
