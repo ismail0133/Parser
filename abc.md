@@ -500,12 +500,4 @@ LEFT JOIN server AS s
 LEFT JOIN vulnerability AS v
     ON f.vulnerability_id = v.vulnerability_id;
 
-AI Vulnerability Remediation : Project Progress
-0 : Initial Parser / DONE
-First structured transformation of RAW Findings into usable business objects.
-1 : Parser V1 + Data Quality / DONE
-Pipeline hardening with business rules, data quality controls, and anomaly detection.
-2 : PostgreSQL Persistence / DONE
-Transition from file-based processing to validated relational persistence in PostgreSQL.
-3 : Agentic Preparation / IN PROGRESS
-Preparing the Parser and data layer for integration into the future multi-agent workflow.
+Rebonjour Mouminy, la responsable pédagogique m’a indiqué que tu pouvais programmer un échange avec elle afin de discuter de la continuité de mon stage, idéalement le plus tôt possible. Est-ce que tu pourrais me dire quand tu serais disponible pour organiser cet échange avec elle ?
