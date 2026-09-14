@@ -1,458 +1,113 @@
-Oui. Pour ta démo, il te faut un scénario simple :
-
-**1. Je montre que la base est propre**
-
-**2. Je lance le loader PostgreSQL**
-
-**3. Je vérifie les tables dans pgAdmin**
-
-**4. Je montre la traçabilité : pipeline_run, anomalies, artifacts**
-
----
-
-# 1. Commandes terminal avant la démo
-
-Dans VS Code / PowerShell, à la racine du projet :
-
-```powershell
-pytest
-```
-
-Puis :
-
-```powershell
-git diff --check
-```
-
-Puis :
-
-```powershell
-python -m compileall .
-```
-
-Objectif à dire à l’oral :
-
-**Avant de charger les données, je vérifie que la suite de tests passe, que le code ne contient pas d’erreur de format et que les fichiers Python compilent correctement.**
-
----
-
-# 2. Commandes PostgreSQL à exécuter avant chargement
-
-Dans pgAdmin, vérifie que les migrations sont bien passées.
-
-## Vérifier les tables importantes
-
-```sql
-SELECT table_name
-FROM information_schema.tables
-WHERE table_schema = 'public'
-ORDER BY table_name;
-```
-
-Tu dois voir au minimum :
-
-```text
-application
-server
-application_server_relation
-vulnerability
-finding
-pipeline_run
-agent
-agent_run
-anomaly
-artifact
-```
-
----
-
-## Vérifier l’index unique Server
-
-```sql
-SELECT
-    indexname,
-    indexdef
-FROM pg_indexes
-WHERE tablename = 'server';
-```
-
-Tu dois avoir un index unique sur `hostname`.
-
----
-
-## Vérifier Artifact
-
-```sql
-SELECT
-    column_name,
-    data_type,
-    is_nullable
-FROM information_schema.columns
-WHERE table_name = 'artifact'
-ORDER BY ordinal_position;
-```
-
-Tu dois voir :
-
-```text
-pipeline_run_id
-agent_run_id
-row_count
-sha256
-```
-
----
-
-# 3. Nettoyer la base pour une démo propre
-
-Si c’est une base de test, fais :
-
-```sql
-TRUNCATE TABLE
-    artifact,
-    anomaly,
-    finding,
-    application_server_relation,
-    server,
-    vulnerability,
-    application,
-    agent_run,
-    agent,
-    pipeline_run
-RESTART IDENTITY CASCADE;
-```
-
-À dire à l’oral :
-
-**Je repars d’une base vide pour montrer un chargement complet et reproductible.**
-
----
-
-# 4. Commande de chargement avec `obj_findings_enriched`
-
-Comme tu veux charger la version enrichie, utilise :
-
-```powershell
-python scripts/load_obj_findings_to_postgres.py --applications output/obj_applications.jsonl --findings output/obj_findings_enriched.jsonl --servers output/obj_servers.jsonl --application-server-relations output/application_server_relations.jsonl --parser-result output/PARSER-Result-20260908-213424.json --parser-anomalies output/parser_anomalies.json
-```
-
-À dire à l’oral :
-
-**Je charge les applications, les findings enrichis, les serveurs, les relations application-serveur, le résultat du Parser et les anomalies. Le but est d’avoir une persistance complète et traçable dans PostgreSQL.**
-
-Si le loader bloque parce que le `ParserResult` pointe vers `obj_findings.jsonl`, utilise temporairement cette commande :
-
-```powershell
-python scripts/load_obj_findings_to_postgres.py --applications output/obj_applications.jsonl --findings output/obj_findings.jsonl --servers output/obj_servers.jsonl --application-server-relations output/application_server_relations.jsonl --parser-result output/PARSER-Result-20260908-213424.json --parser-anomalies output/parser_anomalies.json
-```
-
-Mais pour ta démo finale, le mieux est bien de charger `obj_findings_enriched.jsonl`.
-
----
-
-# 5. Tests pgAdmin après chargement
-
-Récupère d’abord le dernier `pipeline_run_id` :
-
-```sql
-SELECT
-    pipeline_run_id,
-    run_status,
-    source_filename,
-    input_rows,
-    output_findings,
-    error_count,
-    warning_count,
-    started_at,
-    ended_at
-FROM pipeline_run
-ORDER BY started_at DESC
-LIMIT 1;
-```
-
-Copie le `pipeline_run_id`.
-
-Dans tes requêtes suivantes, remplace :
-
-```text
-TON_PIPELINE_RUN_ID
-```
-
-par l’id affiché.
-
----
-
-# 6. Vérifier les Findings chargés
-
-```sql
-SELECT COUNT(*) AS total_findings
-FROM finding
-WHERE pipeline_run_id = 'TON_PIPELINE_RUN_ID';
-```
-
-Objectif :
-
-```text
-total_findings = output_findings
-```
-
-À dire :
-
-**Je vérifie que le nombre de findings chargés correspond au nombre déclaré par le ParserResult.**
-
----
-
-# 7. Vérifier les applications enrichies
-
-```sql
-SELECT
-    COUNT(*) AS total_applications,
-    COUNT(*) FILTER (WHERE application_name IS NULL) AS applications_sans_nom,
-    COUNT(*) FILTER (WHERE application_name IS NOT NULL) AS applications_avec_nom
-FROM application;
-```
-
-Puis :
-
-```sql
-SELECT
-    application_id,
-    auid,
-    application_name,
-    vital,
-    continuity_level,
-    application_manager,
-    domain_manager,
-    appsec,
-    business_line
-FROM application
-ORDER BY application_id
-LIMIT 20;
-```
-
-À dire :
-
-**La table application est enrichie depuis APM. Le code AUID est conservé, et les informations métier comme le nom, le niveau de continuité ou les responsables applicatifs sont persistées.**
-
----
-
-# 8. Vérifier les serveurs enrichis
-
-```sql
-SELECT
-    COUNT(*) AS total_servers,
-    COUNT(*) FILTER (WHERE operating_system IS NULL) AS servers_sans_os,
-    COUNT(*) FILTER (WHERE operating_system IS NOT NULL) AS servers_avec_os
-FROM server;
-```
-
-Puis :
-
-```sql
-SELECT
-    server_id,
-    hostname,
-    operating_system,
-    os_name,
-    os_version,
-    environment,
-    environment_detail,
-    sensitive,
-    authenticated_scan
-FROM server
-ORDER BY server_id
-LIMIT 20;
-```
-
-À dire :
-
-**La table server est maintenant alimentée avec les données APM Server. L’OS complet n’est plus perdu, et les données issues des findings restent utilisées pour les champs métier comme l’environnement détaillé et la sensibilité.**
-
----
-
-# 9. Vérifier les relations Application–Server
-
-```sql
-SELECT COUNT(*) AS total_relations
-FROM application_server_relation;
-```
-
-Puis :
-
-```sql
-SELECT
-    a.auid,
-    a.application_name,
-    s.hostname,
-    s.operating_system
-FROM application_server_relation r
-JOIN application a
-    ON a.application_id = r.application_id
-JOIN server s
-    ON s.server_id = r.server_id
-ORDER BY a.auid, s.hostname
-LIMIT 30;
-```
-
-À dire :
-
-**Cette table permet de conserver la topologie APM : une application peut être liée à plusieurs serveurs, et un serveur peut être partagé par plusieurs applications.**
-
----
-
-# 10. Vérifier les vulnérabilités
-
-```sql
-SELECT
-    COUNT(*) AS total_vulnerabilities
-FROM vulnerability;
-```
-
-Puis :
-
-```sql
-SELECT
-    vulnerability_id,
-    cve_code,
-    title,
-    severity_level,
-    description,
-    cvss_score
-FROM vulnerability
-ORDER BY vulnerability_id
-LIMIT 20;
-```
-
-À dire :
-
-**La table vulnerability centralise les CVE détectées et permet d’éviter de répéter les informations de vulnérabilité dans chaque finding.**
-
-Tu peux ajouter :
-
-**La partie Vulnerability reste un axe d’amélioration futur, notamment pour renforcer la normalisation des CVE et l’upsert conditionnel.**
-
----
-
-# 11. Vérifier les anomalies Parser
-
-```sql
-SELECT
-    anomaly_level,
-    code,
-    COUNT(*) AS total
-FROM anomaly
-GROUP BY anomaly_level, code
-ORDER BY anomaly_level, total DESC;
-```
-
-Puis :
-
-```sql
-SELECT
-    anomaly_id,
-    pipeline_run_id,
-    agent_run_id,
-    finding_id,
-    anomaly_level,
-    code,
-    message,
-    details
-FROM anomaly
-WHERE pipeline_run_id = 'TON_PIPELINE_RUN_ID'
-ORDER BY anomaly_id
-LIMIT 20;
-```
-
-À dire :
-
-**Les anomalies Parser sont maintenant persistées dans PostgreSQL. Elles sont reliées au même pipeline_run_id, ce qui permet d’auditer précisément un chargement.**
-
----
-
-# 12. Vérifier les artifacts
-
-```sql
-SELECT
-    artifact_type,
-    filename,
-    storage_path,
-    row_count,
-    sha256,
-    pipeline_run_id,
-    agent_run_id,
-    created_at
-FROM artifact
-WHERE pipeline_run_id = 'TON_PIPELINE_RUN_ID'
-ORDER BY artifact_type;
-```
-
-À dire :
-
-**Chaque fichier utilisé dans le chargement est enregistré comme artifact avec son chemin, son hash SHA-256, son nombre de lignes quand il est calculable, et son pipeline_run_id. Cela permet de garantir la traçabilité du chargement.**
-
----
-
-# 13. Requête finale de cohérence globale
-
-C’est la meilleure requête pour ta démo :
-
-```sql
-SELECT
-    pr.pipeline_run_id,
-    pr.run_status,
-    pr.input_rows,
-    pr.output_findings,
-    pr.error_count,
-    pr.warning_count,
-    COUNT(DISTINCT f.finding_id) AS findings_in_db,
-    COUNT(DISTINCT an.anomaly_id) AS anomalies_in_db,
-    COUNT(DISTINCT ar.artifact_id) AS artifacts_in_db
-FROM pipeline_run pr
-LEFT JOIN finding f
-    ON f.pipeline_run_id = pr.pipeline_run_id
-LEFT JOIN anomaly an
-    ON an.pipeline_run_id = pr.pipeline_run_id
-LEFT JOIN artifact ar
-    ON ar.pipeline_run_id = pr.pipeline_run_id
-WHERE pr.pipeline_run_id = 'TON_PIPELINE_RUN_ID'
-GROUP BY
-    pr.pipeline_run_id,
-    pr.run_status,
-    pr.input_rows,
-    pr.output_findings,
-    pr.error_count,
-    pr.warning_count;
-```
-
-À dire :
-
-**Cette requête donne une vision complète du run : son statut, le nombre de findings attendus, les findings réellement chargés, les anomalies et les artifacts associés. C’est la preuve que le pipeline PostgreSQL est traçable de bout en bout.**
-
----
-
-# 14. Script oral court pour la démo
-
-Tu peux dire :
-
-**Ici, je montre la persistance PostgreSQL du pipeline. L’objectif n’est pas seulement de charger les données, mais de garantir une traçabilité complète du traitement.**
-
-**Le loader prend en entrée les applications APM, les findings enrichis, les serveurs, les relations application-serveur, le résultat du Parser et les anomalies. Chaque chargement crée un pipeline_run_id unique.**
-
-**Ensuite, les applications sont enrichies avec la source officielle APM, les serveurs sont chargés avec leurs informations système, et les relations Application–Server sont persistées.**
-
-**Le statut du run vient désormais du ParserResult, donc PostgreSQL ne force plus artificiellement un SUCCESS. Les anomalies et les artifacts sont aussi rattachés au même pipeline_run_id, ce qui permet d’auditer précisément le chargement.**
-
-**La dernière requête montre la cohérence globale : le nombre de findings chargés, les anomalies enregistrées et les fichiers associés au run.**
-
----
-
-À la fin, tu peux dire :
-
-**Cette étape valide que la couche PostgreSQL est prête pour l’industrialisation, car elle centralise les données métier, les données techniques et la traçabilité du pipeline dans un modèle relationnel contrôlé.**
-
-
-python -c "import json; data=json.load(open('output/parser_anomalies.json', encoding='utf-8')); [print(a) for a in data if a.get('severity')=='ERROR']"
-
-python -c "import pandas as pd; df=pd.read_csv('data/finding_list_fixed.csv'); print('len=', len(df)); print(df.tail(3).to_string())"
-
-python -c "import pandas as pd; df=pd.read_csv('data/finding_list_fixed.csv'); print(df.iloc[47976].to_string())"
+Proposition d’évolution de la base PostgreSQL
+                                                 Suivi du cycle de vie des vulnérabilités
+1. Contexte
+La première phase du projet a permis de construire et de valider le socle Data nécessaire au traitement industriel des vulnérabilités. À ce stade, on a mis en place la transformation des Findings RAW avec le Parser, l’application des règles métier, la génération d’objets structurés, la persistance réelle dans PostgreSQL, les relations entre Finding, Application, Server et Vulnerability, ainsi que les contrôles d’intégrité et la validation du calcul KRI entre le Parser et PostgreSQL.
+La base permet donc aujourd’hui de stocker correctement les résultats d’un run et de conserver plusieurs exécutions grâce au pipeline_run_id. La prochaine évolution pertinente consiste à ne plus utiliser PostgreSQL uniquement comme une base de stockage, mais comme une base permettant de suivre le cycle de vie d’une vulnérabilité dans le temps.
+2. Problématique
+Un cas métier important est celui d’une vulnérabilité détectée sur un serveur, remédiée, puis observée de nouveau lors d’une campagne suivante.
+Mois N
+CVE-XXXX détectée sur SERVER01
+↓
+Remédiation
+↓
+La vulnérabilité disparaît
+
+Mois N+1
+↓
+Même CVE détectée à nouveau sur SERVER01
+Aujourd’hui, les deux campagnes peuvent être retrouvées grâce aux différents pipelines_run_id. En revanche, la base ne dit pas encore explicitement qu’une vulnérabilité avait été remédiée puis qu’elle a réapparu. L’objectif de cette évolution est précisément de construire cette information.
+3. Idée proposée
+On propose de distinguer deux concepts complémentaires : l’observation et le cycle de vie.
+3.1 L’observation
+Le finding actuel représente ce qui a été observé pendant un run donné. Il doit être conservé tel quel, car il constitue la photographie précise d’une campagne.
+Run septembre
+Finding #1
+SERVER01
+CVE-2026-XXXX
+Critical
+3.2 Le cycle de vie
+Au-dessus des Findings, on peut ajouter une notion représentant une vulnérabilité suivie dans le temps sur un asset donné. Cette couche ne remplace pas les Findings : elle les relie entre eux pour reconstruire l’historique.
+SERVER01 + CVE-2026-XXXX
+
+Première détection : 01/06
+Dernière détection : 05/09
+Statut              : REOPENED
+Nombre d’occurrences : 4
+Nombre de réouvertures : 1
+4. Gestion des statuts
+À chaque nouvelle campagne, la base pourrait comparer le run courant avec le run précédent et classifier automatiquement chaque vulnérabilité suivie.
+NEW : La vulnérabilité apparaît pour la première fois.
+PERSISTENT : Elle était présente au précédent run et elle est toujours présente.
+REMEDIATED : Elle était présente auparavant mais n’est plus observée après remédiation.
+REOPENED : Elle avait été remédiée ou avait disparu, puis elle réapparaît.
+Des statuts comme FALSE_POSITIVE ou ACCEPTED_RISK pourraient également être conservés si ces états sont confirmés par les règles métier.
+5. Exemple de suivi historique
+Campagne	Présence	Statut
+Janvier	Oui	NEW
+Février	Oui	PERSISTENT
+Mars	Non	REMEDIATED
+Avril	Non	REMEDIATED
+Mai	Oui	REOPENED
+Juin	Oui	PERSISTENT
+Avec cette logique, la base peut indiquer directement qu’une vulnérabilité est revenue après une première remédiation.
+9. Indicateurs possibles sans IA
+Cette évolution apporte déjà une valeur métier importante indépendamment de l’accès aux agents IA. PostgreSQL pourrait permettre de répondre directement à des questions comme :
+•	Combien de nouvelles vulnérabilités sont apparues ce mois-ci ?
+•	Combien sont encore présentes depuis le mois précédent ?
+•	Combien ont été remédiées ?
+•	Combien sont revenues après remédiation ?
+•	Quels CVE reviennent le plus souvent ?
+•	Quels serveurs ou applications concentrent le plus de vulnérabilités récurrentes ?
+•	Combien de temps une vulnérabilité reste ouverte ?
+•	Quel est le délai moyen de remédiation ?
+•	Quel est le délai moyen avant réapparition ?
+•	Quel est le taux de récurrence après remédiation ?
+•	Comment le KRI évolue-t-il d’une campagne à l’autre ?
+10. Vues métier
+Pour rendre la base plus simple à exploiter, on peut également créer des vues PostgreSQL orientées métier. L’objectif est d’éviter de reconstruire des requêtes complexes pour chaque consultation.
+•	v_current_open_vulnerabilities
+•	v_new_vulnerabilities
+•	v_persistent_vulnerabilities
+•	v_remediated_vulnerabilities
+•	v_reopened_vulnerabilities
+•	v_kri_history
+•	v_remediation_effectiveness
+11. Pourquoi cette évolution est intéressante
+Cette proposition est cohérente avec l’architecture actuelle car elle ne remet pas en cause le travail déjà réalisé. Elle l’enrichit en ajoutant une dimension historique et métier au-dessus de la persistance existante.
+Aujourd’hui
+
+RAW
+↓
+Parser
+↓
+PostgreSQL
+↓
+Finding / Application / Server / Vulnerability
+L’évolution proposée serait :
+RAW
+↓
+Parser
+↓
+PostgreSQL
+↓
+Historique des runs
+↓
+Cycle de vie des vulnérabilités
+↓
+Remédiation
+↓
+KPI / KRI / récurrence
+↓
+Agents IA
+La couche agentique pourra ainsi s’appuyer plus tard sur une donnée qui contient déjà l’historique, le contexte et les indicateurs nécessaires au raisonnement.
+12. Ordre de réalisation
+1.	Valider la clé métier permettant d’identifier une même vulnérabilité entre deux campagnes.
+2.	Comparer deux pipeline_run.
+3.	Identifier automatiquement les états NEW, PERSISTENT, REMEDIATED et REOPENED.
+4.	Construire l’historique.
+5.	Créer les vues métier.
+6.	Ajouter les KPI de récurrence et d’efficacité de la remédiation.
+7.	Préparer ensuite ces informations pour les futurs agents.
+Conclusion
+Le Parser et PostgreSQL constituent aujourd’hui une fondation Data. L’étape suivante serait de faire de PostgreSQL une base historique du cycle de vie des vulnérabilités.
+Idée centrale : ne pas écraser les anciennes vulnérabilités, mais conserver chaque observation et utiliser l’historique des campagnes pour déterminer si une vulnérabilité est nouvelle, persistante, remédiée ou réouverte.
