@@ -144,19 +144,23 @@ SELECT
     f.age_days,
     f.sla_days,
     f.overdue,
+    f.false_positive,
     f.proposed_action,
-    f.strategy_description,
-    f.source_payload ->> 'KRI RAS 9' AS kri_ras9
+    f.strategy_description
 FROM finding AS f
-LEFT JOIN application AS a
+JOIN application AS a
     ON a.application_id = f.application_id
-LEFT JOIN server AS s
+JOIN server AS s
     ON s.server_id = f.server_id
 LEFT JOIN vulnerability AS v
     ON v.vulnerability_id = f.vulnerability_id
 WHERE a.auid IN ('AP02876', 'AP43116')
-  AND UPPER(TRIM(f.source_payload ->> 'KRI RAS 9')) = 'YES'
+  AND s.sensitive IS TRUE
+  AND s.authenticated_scan IS TRUE
+  AND f.overdue IS TRUE
+  AND LOWER(f.severity_level) IN ('critical', 'very high')
+  AND f.false_positive IS NOT TRUE
 ORDER BY
     a.auid,
-    f.overdue DESC,
-    v.cvss_score DESC NULLS LAST;
+    v.cvss_score DESC NULLS LAST,
+    s.hostname;
