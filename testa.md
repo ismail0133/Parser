@@ -130,3 +130,33 @@ GROUP BY
     a.application_name
 
 ORDER BY a.auid;
+
+
+
+
+SELECT
+    a.auid,
+    s.hostname,
+    v.cve_code,
+    v.cvss_score,
+    f.severity_level,
+    f.affected_component,
+    f.age_days,
+    f.sla_days,
+    f.overdue,
+    f.proposed_action,
+    f.strategy_description,
+    f.source_payload ->> 'KRI RAS 9' AS kri_ras9
+FROM finding AS f
+LEFT JOIN application AS a
+    ON a.application_id = f.application_id
+LEFT JOIN server AS s
+    ON s.server_id = f.server_id
+LEFT JOIN vulnerability AS v
+    ON v.vulnerability_id = f.vulnerability_id
+WHERE a.auid IN ('AP02876', 'AP43116')
+  AND UPPER(TRIM(f.source_payload ->> 'KRI RAS 9')) = 'YES'
+ORDER BY
+    a.auid,
+    f.overdue DESC,
+    v.cvss_score DESC NULLS LAST;
