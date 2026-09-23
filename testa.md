@@ -164,3 +164,20 @@ ORDER BY
     a.auid,
     v.cvss_score DESC NULLS LAST,
     s.hostname;
+
+
+
+    SELECT DISTINCT
+    a.auid,
+    a.application_name,
+    s.hostname,
+    s.environment,
+    s.os_name,
+    s.os_version
+FROM finding AS f
+JOIN application AS a
+    ON a.application_id = f.application_id
+JOIN server AS s
+    ON s.server_id = f.server_id
+ORDER BY a.auid, s.hostname
+LIMIT 50;
